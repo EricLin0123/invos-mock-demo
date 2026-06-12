@@ -22,6 +22,13 @@ function poolConfig() {
 // Exported pool is reused across the app (one pool per process).
 export const pool = new Pool(poolConfig());
 
+// node-postgres emits 'error' on idle clients when the backend dies (e.g. Postgres
+// stops). Without a listener Node treats it as an unhandled 'error' and crashes the
+// process. Log and swallow it so /healthz can keep reporting 503 instead.
+pool.on('error', (err) => {
+  console.error('pg pool error (idle client):', err.message);
+});
+
 // Lightweight connectivity check used by the health endpoint.
 // Returns true on a successful round-trip, false if the pool/query fails.
 export async function pingDb() {

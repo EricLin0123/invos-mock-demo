@@ -1,0 +1,33 @@
+# Grafana datasource provisioning — loaded automatically at startup, no manual clicking.
+# Two datasources: Prometheus (system metrics + k6 remote-write) and PostgreSQL (business data).
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    jsonData:
+      httpMethod: POST
+      # Match Prometheus' scrape_interval so $__rate_interval picks sane windows.
+      timeInterval: 5s
+    editable: true
+
+  - name: PostgreSQL
+    uid: postgres
+    type: postgres
+    access: proxy
+    url: postgres:5432
+    user: invos
+    database: invoices
+    # The dashboards only ever SELECT; this datasource is read-only by intent.
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1600
+      timescaledb: false
+    secureJsonData:
+      # demo-only credentials (match docker-compose.yml POSTGRES_PASSWORD).
+      password: devonly
+    editable: true

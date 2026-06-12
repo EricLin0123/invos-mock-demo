@@ -1,5 +1,8 @@
-# Docker Compose for invos-mock-demo — Step 1 provides PostgreSQL only.
-# Additional services (Prometheus, Grafana, etc.) are added in later steps.
+# Docker Compose for invos-mock-demo.
+#   Step 1: PostgreSQL.
+#   Step 5: Prometheus + Grafana for monitoring (this file).
+# `docker compose up -d` brings up the whole observability stack. The Fastify ingestion
+# server still runs on the host (port 8473) — Prometheus reaches it via host.docker.internal.
 
 services:
   postgres:
@@ -21,5 +24,48 @@ services:
       timeout: 5s
       retries: 5
 
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: invos-prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      # Let k6 push its metrics in via remote-write (Step 4's optional -o prometheus-rw).
+      - "--web.enable-remote-write-receiver"
+      - "--storage.tsdb.retention.time=6h"
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - invos-prometheus-data:/prometheus
+    # The Fastify server runs on the host, not in compose. host-gateway maps
+    # host.docker.internal to the host so the scrape target below resolves on Linux too.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    container_name: invos-grafana
+    depends_on:
+      - prometheus
+      - postgres
+    ports:
+      # Host 3001 -> container 3000, to avoid colliding with other local Grafanas / dev apps.
+      # Override the host port with GRAFANA_PORT if 3001 is already taken on your machine.
+      - "${GRAFANA_PORT:-3001}:3000"
+    environment:
+      # Local demo only: anonymous viewers can see the dashboards with no login; admin
+      # login still exists for editing, password overridable via env.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Viewer"
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD:-admin}"
+      GF_USERS_DEFAULT_THEME: "light"
+    volumes:
+      # Provisioning (datasources + dashboard provider) and the dashboard JSON, all as code.
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - invos-grafana-data:/var/lib/grafana
+
 volumes:
   invos-pgdata:
+  invos-prometheus-data:
+  invos-grafana-data:

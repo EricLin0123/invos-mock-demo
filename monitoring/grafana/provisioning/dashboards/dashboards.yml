@@ -1,0 +1,15 @@
+# Grafana dashboard provider — auto-loads every dashboard JSON in the mounted folder.
+apiVersion: 1
+
+providers:
+  - name: invos-dashboards
+    orgId: 1
+    folder: invos-mock-demo
+    type: file
+    disableDeletion: false
+    # Re-read the folder periodically so edits to the JSON show up without a restart.
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

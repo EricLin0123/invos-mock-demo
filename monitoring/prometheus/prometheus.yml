@@ -1,0 +1,23 @@
+# prometheus.yml — scrape config for the invos-mock-demo stack.
+# Scrapes the Fastify ingestion server's /metrics endpoint every 5s. k6 metrics arrive via
+# the remote-write receiver (enabled by --web.enable-remote-write-receiver in compose), not
+# by scraping, so there is no scrape job for k6.
+
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  # The Fastify ingestion API (Step 3 metrics: invos_ingest_*, plus default Node metrics).
+  # It runs on the host, so we target host.docker.internal (mapped to host-gateway in compose).
+  - job_name: fastify-ingest
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["host.docker.internal:8473"]
+        labels:
+          service: ingest
+
+  # Prometheus scraping itself — handy for sanity-checking the monitoring stack is alive.
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

@@ -132,8 +132,30 @@ distribution (the Step-2 90-day window, unchanged).
 
 ## Stress: the failure point
 
-<!-- STRESS_FINDINGS -->
-_Run `make k6-stress` to locate the wall; findings are recorded here._
+Measured locally (Docker Compose Postgres, host Fastify, dataset already loaded so inserts
+take the idempotent duplicate path), stepping 100 → 200 → 400 → 800 req/s:
+
+- **Which threshold broke first:** `http_req_duration{expected:ok}: p99 < 500ms`. It was the
+  *only* threshold to break — `p95` (41.7 ms) and `http_req_failed` (0.00%) both stayed green,
+  and there were **zero 5xx** throughout. The tail went first.
+- **At what RPS:** the 100 and 200 req/s plateaus passed cleanly. The run aborted ~20 s into
+  the ramp toward **400 req/s** (≈4m20s), i.e. the server sustains ~200–300 req/s (≈10,000–
+  15,000 invoices/s offered) and the p99 budget breaks pushing past that toward 400 req/s.
+  Max observed latency at the break was ~1.06 s.
+- **Suspected bottleneck — the Postgres connection pool.** The tell is the shape of the
+  failure: as offered load crossed ~200 req/s, k6's active VUs piled up from ~80 to the
+  `maxVUs` cap (313 → 400) within a few seconds while mean and p95 barely moved and *no
+  requests failed*. Requests weren't erroring — they were **queuing**. The server's pg pool
+  uses node-postgres' default `max: 10` connections, and every batch holds one connection for
+  50 sequential `INSERT ... ON CONFLICT` statements inside a single transaction. Past ~10
+  concurrent in-flight batches all pooled connections are checked out, so new requests wait for
+  a connection; that wait lands entirely in the **tail** (p99), not the mean — exactly what we
+  see. Postgres CPU and Node event-loop lag are secondary here; the first wall is connection
+  checkout. The obvious next experiments: raise the pool `max`, and/or collapse each batch's 50
+  round-trips into a single multi-row insert so a connection is held for far less time.
+
+Reproduce with `make k6-stress` (it sets `abortOnFail`, so k6 stops at the first broken
+threshold — the run ends at the wall).
 
 ## Out of scope
 

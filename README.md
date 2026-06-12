@@ -1,12 +1,43 @@
 # invos-mock-demo
 
 A small demo project that ingests mock Taiwanese e-invoice data into a local PostgreSQL
-database for testing and development. It is built up in five steps (server & database, data
-generation, ingestion, k6 load testing, Grafana monitoring); this repo currently implements
-**Steps 1–4** — a Fastify server connected to a Dockerized PostgreSQL 16, a Python data
-generator that emits mock invoices as NDJSON, an ingestion API that validates and persists
-those invoices idempotently while exposing Prometheus metrics, and a Grafana k6 load test
-(`loadtest/`) that replays the generated data under smoke/load/stress/soak profiles.
+database for testing and development. It is built up in five steps and this repo implements
+**all of them**: a Fastify server on Dockerized PostgreSQL 16 (Step 1), a Python data
+generator that emits mock invoices as NDJSON with a built-in ad-campaign effect (Step 2), an
+ingestion API that validates and persists invoices idempotently while exposing Prometheus
+metrics (Step 3), a Grafana k6 load test that replays the data under smoke/load/stress/soak
+profiles (Step 4), and a provisioned Prometheus + Grafana monitoring stack with two
+dashboards-as-code (Step 5).
+
+## 5-minute demo
+
+```bash
+bash scripts/demo.sh          # compose up → migrate → generate → replay → k6 → print URLs
+```
+
+Then open **Grafana at http://localhost:3001** (anonymous viewer). See `scripts/README.md`
+for knobs (`K6_PROFILE=load`, `SKIP_K6=1`, …).
+
+## Architecture
+
+```mermaid
+flowchart LR
+  gen["generator (Python)\nmock invoices + ad campaign"] -->|NDJSON| feed
+  subgraph feed["traffic"]
+    replay["server/scripts/replay.js"]
+    k6["k6 profiles\n(smoke/load/stress/soak)"]
+  end
+  feed -->|"POST /api/invoices(/batch)"| api["Fastify ingestion API\n:8473  /metrics"]
+  api -->|"idempotent upsert"| pg[("PostgreSQL 16")]
+  prom["Prometheus :9090"] -->|"scrape /metrics 5s"| api
+  k6 -.->|"remote-write (optional)"| prom
+  graf["Grafana :3001"] -->|PromQL| prom
+  graf -->|SQL| pg
+```
+
+Prometheus and Grafana observe **both sides**: the service (via `/metrics`) and the data (via
+SQL). k6 can push its own metrics to Prometheus so offered load and server-observed load sit on
+one chart — the visual proof of open-model load testing.
 
 ## Quickstart (end to end: generate → migrate → serve → replay → query)
 
@@ -67,13 +98,47 @@ make k6-soak     # 50 req/s, 60 min
 make k6-verify   # DB consistency checks after a run (loadtest/verify.sql)
 ```
 
-See `loadtest/README.md` for design notes, env vars, and the optional Prometheus output
-(Step 5). The k6 data feed (`loadtest/data/chunks.json`) is generated and git-ignored.
+See `loadtest/README.md` for design notes, env vars, the optional Prometheus output, and the
+documented **stress failure point**. The k6 data feed (`loadtest/data/chunks.json`) is
+generated and git-ignored.
+
+## Monitoring (Step 5 — Prometheus + Grafana)
+
+`docker compose up -d` brings up Prometheus (`:9090`) and Grafana (`:3001`), both provisioned
+as code from `monitoring/` — datasources and two dashboards auto-load with zero manual clicks:
+
+- **System Performance** (Prometheus): request rate by status, latency p50/p95/p99, invoice
+  outcome rates, Node event-loop/heap/CPU, and **k6 offered load vs server-observed rate**.
+- **Invoice Analytics** (PostgreSQL): daily counts & revenue, top categories, weekend lift,
+  and **toothpaste daily quantity by brand** — with the campaign on, the **PearlGuard** line
+  visibly lifts after **2025-02-15**; turn `campaign.enabled: false` in the generator config and
+  it stays flat. All panels query by `invoice_date` (event time), not `created_at` (ingest time).
+
+Grafana is at http://localhost:3001 (anonymous viewer; admin `admin`/`${GRAFANA_ADMIN_PASSWORD:-admin}`).
+If port 3001 is taken, set `GRAFANA_PORT`. See `monitoring/README.md` for details (including a
+Linux/ufw firewall note for the host scrape). Screenshots:
+
+<!-- ![System Performance dashboard](docs/system-performance.png) -->
+<!-- ![Invoice Analytics dashboard](docs/invoice-analytics.png) -->
+
+## Design notes
+
+- **Idempotent ingest.** `ON CONFLICT (invoice_number, invoice_date) DO NOTHING` makes replays
+  and retries safe; duplicates are a tracked metric, not an error.
+- **Open-model load.** k6 uses arrival-rate executors, so a slowing server shows up as broken
+  latency thresholds — not as silently reduced load. The system dashboard overlays k6's offered
+  rate with the server-observed rate to make this visible.
+- **Event-time analytics.** Dashboards aggregate by `invoice_date` (when the purchase happened),
+  not `created_at` (when we ingested it) — the event-time vs processing-time distinction.
+- **Campaign ground truth.** The generator embeds a known ad-campaign effect and records exactly
+  who was exposed in `generator/data/ground_truth.json`, so the dashboard's detected lift can be
+  checked against the truth.
 
 ## Stack
 
 - Node.js 20 + Fastify (`server/`)
 - Grafana k6 load test (`loadtest/`)
+- Prometheus + Grafana, provisioned as code (`monitoring/`)
 - PostgreSQL 16 via Docker Compose / OrbStack (`docker-compose.yml`)
 - Plain SQL migrations with a tiny runner (`db/migrations/`, `server/scripts/migrate.js`)
 - Prometheus client (`prom-client`) for ingestion metrics
@@ -88,6 +153,35 @@ The server reads `DATABASE_URL`, or falls back to `PGHOST` / `PGPORT` / `PGUSER`
 
 ```bash
 cd server && npm test   # requires the compose Postgres to be running and migrated
+```
+
+## Future work (out of scope)
+
+No Kubernetes (stays on Docker Compose), no Grafana alerting rules, and no auth hardening —
+the stack uses demo-only credentials and anonymous Grafana access on purpose.
+
+## Cleanup
+
+Return the machine to a pristine state:
+
+```bash
+# Stop the host ingestion server (if started via demo.sh)
+kill "$(cat /tmp/invos-server.pid)" 2>/dev/null || true
+
+# Tear down containers AND their volumes (Postgres data, Prometheus/Grafana state)
+docker compose down -v
+
+# Reclaim space from pulled images/build cache
+docker system prune -f
+
+# Remove the repo
+cd .. && rm -rf invos-mock-demo
+
+# Uninstall the toolchain (Homebrew / macOS)
+brew uninstall k6
+brew uninstall node
+brew uninstall uv
+brew uninstall --cask docker   # or: brew uninstall orbstack
 ```
 
 > The build steps are described in `steps/`. Feed them one at a time, in order, verifying each

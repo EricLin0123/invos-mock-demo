@@ -1,0 +1,81 @@
+# config.yaml — ALL tunable parameters for the invoice generator live here.
+# Edit values, re-run `uv run python -m generator`, and the statistical
+# properties of the output change accordingly. Every knob is commented.
+
+# Default RNG seed. Overridable with --seed on the CLI.
+# Same seed + same config => byte-identical output.
+seed: 42
+
+population:
+  households: 5000          # number of distinct households (each = one carrier_id)
+  # Per-household shopping-frequency multiplier ~ Gamma(shape, scale).
+  # shape=2, scale=0.5 => mean 1.0, right-skewed: a few heavy shoppers, many light ones.
+  frequency_gamma_shape: 2.0
+  frequency_gamma_scale: 0.5
+  stores_in_catalog: 40     # size of the seller catalog
+  preferred_stores_min: 3   # each household shops at 3..5 preferred stores
+  preferred_stores_max: 5
+
+simulation:
+  days: 90                  # number of simulated days
+  start_date: "2025-01-01"  # date of simulated day 0 (affects bimonthly invoice-number prefix)
+  base_rate: 0.20           # baseline daily probability a household shops
+  weekend_factor: 1.25      # weekends (Sat/Sun) multiply the daily shopping probability
+
+purchase:
+  items_min: 1              # items per invoice are drawn uniformly in [items_min, items_max]
+  items_max: 6
+  # Probability that a given invoice contains a toothpaste line (before any campaign lift).
+  # Kept as an explicit knob so the campaign effect is clean and statistically testable.
+  toothpaste_base_prob: 0.18
+  quantity_weights:         # P(quantity = 1,2,3) for any line item
+    "1": 0.7
+    "2": 0.22
+    "3": 0.08
+
+# Product catalog. Each category has an integer NTD unit-price range [min, max].
+# Must include toothpaste plus >=5 other everyday categories (per spec).
+categories:
+  toothpaste:
+    price_min: 45
+    price_max: 120
+    # Three named mock brands. Per-household brand preference is generated in population.py.
+    brands: ["BrightMint", "PearlGuard", "FreshWave"]
+    descriptions: ["Toothpaste 150g", "Toothpaste 200g Family Pack", "Whitening Toothpaste"]
+  snacks:
+    price_min: 20
+    price_max: 80
+    descriptions: ["Potato Chips", "Rice Crackers", "Chocolate Bar", "Mixed Nuts"]
+  beverages:
+    price_min: 15
+    price_max: 60
+    descriptions: ["Bottled Tea", "Canned Coffee", "Sports Drink", "Mineral Water"]
+  instant_noodles:
+    price_min: 25
+    price_max: 70
+    descriptions: ["Beef Noodles Cup", "Spicy Ramen Pack", "Seafood Noodles"]
+  shampoo:
+    price_min: 90
+    price_max: 250
+    descriptions: ["Shampoo 400ml", "Anti-Dandruff Shampoo", "Conditioner 350ml"]
+  household_goods:
+    price_min: 30
+    price_max: 300
+    descriptions: ["Paper Towels", "Dish Soap", "Trash Bags", "Laundry Detergent"]
+# Relative weights for picking NON-toothpaste categories on a line item.
+# (Toothpaste is decided separately via toothpaste_base_prob.)
+category_weights:
+  snacks: 1.0
+  beverages: 1.0
+  instant_noodles: 0.8
+  shampoo: 0.4
+  household_goods: 0.6
+
+# Optional "ad campaign" effect — the commercial that later dashboards should detect.
+campaign:
+  enabled: true
+  start_day: 45             # campaign begins on this simulated day (0-indexed)
+  exposed_fraction: 0.40    # fraction of households exposed to the campaign
+  lift: 1.5                 # exposed households' toothpaste purchase prob is multiplied by this
+  brand: "PearlGuard"       # exposed households' brand preference shifts toward this brand
+  brand_shift: 0.5          # 0..1: how strongly exposed preference moves toward campaign.brand

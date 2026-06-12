@@ -43,14 +43,14 @@ A running Fastify server connected to a Dockerized PostgreSQL, with the invoice 
     ```bash
     docker compose up -d postgres
     cd server && npm install && npm run migrate && npm run dev
-    curl localhost:3000/healthz
+    curl localhost:8473/healthz
     ```
 
 ## Acceptance criteria
 
 - `docker compose up -d postgres` → healthy container.
 - `npm run migrate` is idempotent (running twice changes nothing).
-- `curl localhost:3000/healthz` → `200 {"status":"ok","db":true}`.
+- `curl localhost:8473/healthz` → `200 {"status":"ok","db":true}`.
 - Stopping Postgres makes `/healthz` return 503 (server must not crash).
 - All tests pass; every file has a short top-of-file comment stating its role.
 

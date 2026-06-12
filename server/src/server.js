@@ -5,7 +5,8 @@ import { pool } from './db.js';
 
 const app = buildApp();
 
-const port = Number(process.env.PORT) || 3000;
+// Default to an uncommon port to avoid colliding with the usual dev servers (3000/8080/etc.).
+const port = Number(process.env.PORT) || 8473;
 const host = process.env.HOST || '0.0.0.0';
 
 // Close the HTTP server and the DB pool cleanly so we don't leak connections.

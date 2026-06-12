@@ -1,0 +1,7 @@
+# Generated NDJSON output and ground truth are reproducible artifacts — not committed.
+data/
+# uv-managed virtualenv lives inside the repo.
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/

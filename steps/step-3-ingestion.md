@@ -37,3 +37,5 @@ Step 1 gave us Fastify + Postgres + schema; Step 2 gave us NDJSON mock invoices.
 ## Out of scope
 
 No k6 (Step 4), no Grafana provisioning (Step 5), no message queues, no auth.
+
+If you added any subfolder one level down the project root, please add a readme.md in it describing what the codes here are abouit and how to use them. If there are any data that's generated or cached, please add corresponding gitignore rules to avoid them being committed to the repository.

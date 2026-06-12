@@ -1,0 +1,17 @@
+{
+  "name": "invos-mock-demo-server",
+  "version": "1.0.0",
+  "description": "Fastify server for ingesting mock Taiwanese e-invoice data into PostgreSQL.",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "migrate": "node scripts/migrate.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "fastify": "^5.2.0",
+    "pg": "^8.13.1"
+  }
+}

@@ -1,18 +1,35 @@
-# invos-mock-demo — Sequential Agent Prompts (Index)
+# invos-mock-demo
 
-Five self-contained prompts for a coding agent. Feed them **one at a time, in order**; verify each step's acceptance criteria yourself before starting the next.
+A small demo project that ingests mock Taiwanese e-invoice data into a local PostgreSQL
+database for testing and development. It is built up in five steps (server & database, data
+generation, ingestion, k6 load testing, Grafana monitoring); this repo currently implements
+**Step 1** — a Fastify server connected to a Dockerized PostgreSQL 16, with the invoice schema
+migrated and a `/healthz` endpoint that proves database connectivity end to end.
 
-| Step | File | Delivers |
-|---|---|---|
-| 1 | `step-1-server-and-database.md` | Fastify server + Dockerized PostgreSQL + invoice schema + migrations + health check |
-| 2 | `step-2-data-generation.md` | Python/Faker generator: deterministic NDJSON invoices, household model, optional campaign effect with ground truth |
-| 3 | `step-3-ingestion.md` | Validated, idempotent, transactional ingest endpoints + metrics + replay script |
-| 4 | `step-4-k6-load-testing.md` | k6 smoke/load/stress/soak profiles, thresholds, malformed-traffic injection, DB verification |
-| 5 | `step-5-grafana-monitoring.md` | Prometheus + Grafana provisioned as code: system dashboard + invoice analytics dashboard (campaign lift visible), demo script, cleanup guide |
+## Quickstart
 
-## Usage tips
+```bash
+docker compose up -d postgres
+cd server && npm install && npm run migrate && npm run dev
+curl localhost:3000/healthz   # -> {"status":"ok","db":true}
+```
 
-- Each prompt has Context / Goal / Tasks / Acceptance criteria / Out of scope. The "out of scope" lines stop the agent from sprinting ahead.
-- The toolchain is fixed: Docker (OrbStack), k6, uv — plus Node and Python *inside* the project. kind/kubectl/helm from the original toolchain list are NOT used in these five steps (the project stays on Docker Compose); keep them uninstalled unless you later extend to Kubernetes.
-- Between steps, commit. If the agent deviates from the structure or adds dependencies beyond the prompt, push back — minimalism is part of the demo.
-- The thread connecting everything: generator (Step 2) plants a campaign effect → ingest (Step 3) stores it idempotently → k6 (Step 4) proves the pipeline under load → Grafana (Step 5) makes both the system's health and the planted effect visible.
+## Stack
+
+- Node.js 20 + Fastify (`server/`)
+- PostgreSQL 16 via Docker Compose / OrbStack (`docker-compose.yml`)
+- Plain SQL migrations with a tiny runner (`db/migrations/`, `server/scripts/migrate.js`)
+
+## Configuration
+
+The server reads `DATABASE_URL`, or falls back to `PGHOST` / `PGPORT` / `PGUSER` /
+`PGPASSWORD` / `PGDATABASE` with localhost demo defaults that match `docker-compose.yml`.
+
+## Tests
+
+```bash
+cd server && npm test   # requires the compose Postgres to be running and migrated
+```
+
+> The build steps are described in `steps/`. Feed them one at a time, in order, verifying each
+> step's acceptance criteria before starting the next.

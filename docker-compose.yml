@@ -1,0 +1,25 @@
+# Docker Compose for invos-mock-demo — Step 1 provides PostgreSQL only.
+# Additional services (Prometheus, Grafana, etc.) are added in later steps.
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: invos-postgres
+    environment:
+      # demo-only credentials
+      POSTGRES_USER: invos
+      POSTGRES_PASSWORD: devonly
+      POSTGRES_DB: invoices
+    ports:
+      - "5432:5432"
+    volumes:
+      - invos-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # pg_isready confirms the server accepts connections before dependents start.
+      test: ["CMD-SHELL", "pg_isready -U invos -d invoices"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  invos-pgdata:

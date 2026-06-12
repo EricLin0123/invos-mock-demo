@@ -3,9 +3,10 @@
 A small demo project that ingests mock Taiwanese e-invoice data into a local PostgreSQL
 database for testing and development. It is built up in five steps (server & database, data
 generation, ingestion, k6 load testing, Grafana monitoring); this repo currently implements
-**Steps 1–3** — a Fastify server connected to a Dockerized PostgreSQL 16, a Python data
-generator that emits mock invoices as NDJSON, and an ingestion API that validates and
-persists those invoices idempotently while exposing Prometheus metrics.
+**Steps 1–4** — a Fastify server connected to a Dockerized PostgreSQL 16, a Python data
+generator that emits mock invoices as NDJSON, an ingestion API that validates and persists
+those invoices idempotently while exposing Prometheus metrics, and a Grafana k6 load test
+(`loadtest/`) that replays the generated data under smoke/load/stress/soak profiles.
 
 ## Quickstart (end to end: generate → migrate → serve → replay → query)
 
@@ -50,9 +51,29 @@ insert — the natural key, since Taiwanese invoice numbers are only unique per 
 **Measured locally:** the default 90-day file (98,060 invoices / 343,054 items) replays in
 ~13 s; p95 single-invoice insert latency is well under 5 ms at concurrency 8 (target ~20 ms).
 
+## Load testing (Step 4 — k6)
+
+`loadtest/` drives the ingestion API with [Grafana k6](https://k6.io). It replays the
+generated invoices in batches of 50 against `POST /api/invoices/batch`, injects 2% malformed
+payloads (asserting 400/422, never 5xx), enforces latency/error thresholds, and reports custom
+counters (`invos_created`, `invos_duplicates`, `invos_rejected`). Four profiles — smoke, load,
+stress, soak — are wired to Makefile targets:
+
+```bash
+make k6-smoke    # 5 req/s, 1 min
+make k6-load     # ramp 0->100 req/s, hold 10 min
+make k6-stress   # step 100->200->400->800 req/s until a threshold breaks
+make k6-soak     # 50 req/s, 60 min
+make k6-verify   # DB consistency checks after a run (loadtest/verify.sql)
+```
+
+See `loadtest/README.md` for design notes, env vars, and the optional Prometheus output
+(Step 5). The k6 data feed (`loadtest/data/chunks.json`) is generated and git-ignored.
+
 ## Stack
 
 - Node.js 20 + Fastify (`server/`)
+- Grafana k6 load test (`loadtest/`)
 - PostgreSQL 16 via Docker Compose / OrbStack (`docker-compose.yml`)
 - Plain SQL migrations with a tiny runner (`db/migrations/`, `server/scripts/migrate.js`)
 - Prometheus client (`prom-client`) for ingestion metrics

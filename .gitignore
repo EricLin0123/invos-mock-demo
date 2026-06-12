@@ -1,2 +1,5 @@
 .DS_Store
 node_modules/
+
+# Step 4: k6 data feed is generated from the Step-2 NDJSON by loadtest/prepare.js.
+loadtest/data/

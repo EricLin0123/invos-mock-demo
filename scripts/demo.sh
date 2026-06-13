@@ -63,7 +63,7 @@ fi
 say "7/7 Done — open Grafana"
 cat <<EOF
 
-  Grafana:     http://localhost:3001   (anonymous viewer; admin / \${GRAFANA_ADMIN_PASSWORD:-admin})
+  Grafana:     http://localhost:8474   (anonymous viewer; admin / \${GRAFANA_ADMIN_PASSWORD:-admin})
   Prometheus:  http://localhost:9090
 
   Dashboards (folder "invos-mock-demo"):
@@ -74,6 +74,5 @@ cat <<EOF
     • invos · Invoice Analytics    — daily counts/revenue, top categories, weekend lift,
                                       and TOOTHPASTE BY BRAND: PearlGuard lifts after 2025-02-15.
 
-  Stop the host server:  kill \$(cat /tmp/invos-server.pid)
-  Tear everything down:  docker compose down -v
+  Stop everything:       bash scripts/stop-demo.sh   (add WIPE_DATA=1 to drop data volumes)
 EOF

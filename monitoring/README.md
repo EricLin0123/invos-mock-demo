@@ -18,7 +18,7 @@ monitoring/
 
 ## Access
 
-- **Grafana** — http://localhost:3001 (host 3001 → container 3000). Anonymous viewer access is
+- **Grafana** — http://localhost:8474 (host 8474 → container 3000). Anonymous viewer access is
   on (local demo); admin login is `admin` / `${GRAFANA_ADMIN_PASSWORD:-admin}` for editing.
 - **Prometheus** — http://localhost:9090.
 
@@ -35,12 +35,11 @@ monitoring/
 
 ## Host networking caveats
 
-- **Grafana port.** Grafana publishes host `3001`. If that port is busy, set `GRAFANA_PORT`:
-  `GRAFANA_PORT=3002 docker compose up -d grafana` (then browse to `:3002`).
-- **Linux + firewall (ufw).** Prometheus scrapes the host server via `host.docker.internal`.
-  On macOS (the primary target) this works out of the box. On Linux with a restrictive firewall
-  (e.g. ufw), the Docker bridge → host packets may be dropped, leaving the `fastify-ingest`
-  target `down` with a timeout. Two fixes: allow the Docker subnet to reach the host
+- **Grafana port.** Grafana publishes host `8474`. If that port is busy, set `GRAFANA_PORT`:
+  `GRAFANA_PORT=8475 docker compose up -d grafana` (then browse to `:8475`).
+- **Firewall (ufw).** Prometheus scrapes the host server via `host.docker.internal`. With a
+  restrictive firewall (e.g. ufw), the Docker bridge → host packets may be dropped, leaving the
+  `fastify-ingest` target `down` with a timeout. Two fixes: allow the Docker subnet to reach the host
   (`sudo ufw allow in on docker0 to any port 8473`, adjusting the bridge name), or run the
   server bound to the host on all interfaces (it already binds `0.0.0.0:8473`) and confirm the
   firewall isn't blocking it. The k6 remote-write path (host → `localhost:9090`) is unaffected.

@@ -5,8 +5,8 @@ k6 is the traffic engine for the ingestion API. It replays the Step-2 invoice da
 payloads, and turns latency/error expectations into pass/fail **thresholds**. The results are
 the load story Grafana visualizes in Step 5.
 
-k6 is a standalone binary (`brew install k6`, or download from grafana.com/k6) — no extensions,
-no k6 Cloud.
+k6 is a standalone binary (install from the [Grafana apt repo](https://grafana.com/docs/k6/latest/set-up/install-k6/#linux)
+or download from grafana.com/k6) — no extensions, no k6 Cloud.
 
 ## Layout
 

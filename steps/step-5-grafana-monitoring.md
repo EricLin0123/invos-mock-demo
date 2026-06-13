@@ -6,13 +6,13 @@ Final step. The stack ingests generated invoices (Steps 1–3) and k6 drives loa
 
 ## Goal of this step
 
-`docker compose up -d` brings up the full stack; Grafana at `localhost:3001` auto-loads datasources and two dashboards with zero manual clicking. A k6 load run is visible live; the toothpaste campaign lift is visible in the business dashboard.
+`docker compose up -d` brings up the full stack; Grafana at `localhost:8474` auto-loads datasources and two dashboards with zero manual clicking. A k6 load run is visible live; the toothpaste campaign lift is visible in the business dashboard.
 
 ## Tasks
 
 1. **Compose additions** (`docker-compose.yml`):
    - `prometheus` (port 9090): scrape config at `monitoring/prometheus/prometheus.yml` scraping the Fastify `/metrics` every 5 s; enable remote-write receiver (`--web.enable-remote-write-receiver`) so k6 can push.
-   - `grafana` (host port 3001, container 3000): provisioned datasources (Prometheus + PostgreSQL, both read-only intent; Postgres datasource uses the demo credentials with a `# demo-only` comment) and dashboard auto-load from `monitoring/grafana/dashboards/`.
+   - `grafana` (host port 8474, container 3000): provisioned datasources (Prometheus + PostgreSQL, both read-only intent; Postgres datasource uses the demo credentials with a `# demo-only` comment) and dashboard auto-load from `monitoring/grafana/dashboards/`.
    - Anonymous viewer access enabled (it's a local demo); admin password via env default.
 2. **Dashboard 1 — `system-performance.json`** (Prometheus datasource):
    - Ingest request rate by status (stacked), from `invos_ingest_requests_total`.

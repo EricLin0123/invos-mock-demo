@@ -37,7 +37,7 @@ Each line is one JSON object matching the ingestion API's invoice schema
 | `random_code`    | string         | 4 digits.                                                   |
 | `seller_tax_id`  | string         | 8-digit seller number (from `config.sellers`).              |
 | `seller_name`    | string         | Seller display name (from `config.sellers`).                |
-| `carrier_id`     | string \| null | Mobile-barcode carrier `/`+7 chars; null ~30% of the time.  |
+| `carrier_id`     | string \| null | Consumer key: `/`+7 chars from a fixed population of `users`; null for ~`anonymous_rate` of invoices. |
 | `total_amount`   | integer        | NTD (no cents) = sum of item `amount`.                      |
 | `items`          | array\<item\>  | `items_min`–`items_max` line items.                         |
 
@@ -53,9 +53,10 @@ Each `items[]` element:
 
 ## Configuration
 
-All knobs live in [`config.yaml`] (every field is commented): `count`, item/quantity
-ranges, the `sellers` list, and the `commodities` catalog (category → price range,
-descriptions). Add or remove commodities to vary the product mix.
+All knobs live in [`config.yaml`] (every field is commented): `count`, `users` (size of the
+consumer population) and `anonymous_rate`, item/quantity ranges, the `sellers` list, and the
+`commodities` catalog (category → price range, descriptions). Add or remove commodities to
+vary the product mix.
 
 ## Determinism
 

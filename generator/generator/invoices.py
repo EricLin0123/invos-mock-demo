@@ -27,10 +27,8 @@ def _random_code(rng: random.Random) -> str:
     return "".join(rng.choices(_DIGITS, k=4))
 
 
-def _carrier_id(rng: random.Random) -> str | None:
-    """Mobile-barcode carrier '/'+7 chars; ~30% of invoices carry none (null)."""
-    if rng.random() < 0.30:
-        return None
+def _make_carrier(rng: random.Random) -> str:
+    """A mobile-barcode carrier id: '/' + 7 chars. One per consumer (stable user key)."""
     return "/" + "".join(rng.choices(_CARRIER_CHARS, k=7))
 
 
@@ -62,14 +60,20 @@ def generate(cfg: dict, seed: int) -> list[dict]:
     items_max = int(cfg["items_max"])
     quantity_min = int(cfg["quantity_min"])
     quantity_max = int(cfg["quantity_max"])
+    anonymous_rate = float(cfg.get("anonymous_rate", 0.10))
 
     sellers = cfg["sellers"]
     commodities = cfg["commodities"]
     categories = list(commodities.keys())
 
+    # A fixed population of consumers, each with a stable carrier_id (the user key).
+    # Invoices are assigned to a random user, so "distinct carrier_id" = users seen.
+    users = [_make_carrier(rng) for _ in range(int(cfg["users"]))]
+
     invoices: list[dict] = []
     for _ in range(count):
         seller = rng.choice(sellers)
+        carrier_id = None if rng.random() < anonymous_rate else rng.choice(users)
         n_items = rng.randint(items_min, items_max)
         items = [
             _make_item(cat := rng.choice(categories), commodities[cat], rng,
@@ -82,7 +86,7 @@ def generate(cfg: dict, seed: int) -> list[dict]:
             "random_code": _random_code(rng),
             "seller_tax_id": seller["tax_id"],
             "seller_name": seller["name"],
-            "carrier_id": _carrier_id(rng),
+            "carrier_id": carrier_id,
             "total_amount": sum(it["amount"] for it in items),
             "items": items,
         })

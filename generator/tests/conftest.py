@@ -17,4 +17,5 @@ def small_config():
     """A scaled-down config so tests run fast."""
     cfg = copy.deepcopy(load_config())
     cfg["count"] = 2000
+    cfg["users"] = 200
     return cfg

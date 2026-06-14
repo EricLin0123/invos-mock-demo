@@ -54,7 +54,9 @@ the **server-observed** rate — the visual proof of open-model load testing.
 **Invoice Analytics** (PostgreSQL): a live view of the ingested data. Total invoices / line
 items / revenue tick up as rows arrive; **invoices ingested per 5s** and a **cumulative** line
 show the database filling from empty (by `created_at`, ingest time); and **line items by
-commodity type** shows the generic commodity mix growing. Start with an empty DB
+commodity type** shows the generic commodity mix growing. A **user-analytics** row tracks
+distinct consumers by `carrier_id` — distinct users, average invoices per user, identified
+share, new users per 5s, and top users by spend. Start with an empty DB
 (`bash scripts/run.sh up` does not replay) and run a test to watch it fill.
 
 The default time range is relative (`now-15m → now`) with 5s auto-refresh, so the live ingest

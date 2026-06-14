@@ -5,6 +5,9 @@
 seed: 42                     # default RNG seed (override with --seed)
 count: 100000               # number of invoices to generate (override with --count)
 
+users: 5000                  # distinct consumers; each has a stable carrier_id (the user key)
+anonymous_rate: 0.10         # fraction of invoices with no carrier (carrier_id = null)
+
 items_min: 1                 # items per invoice, drawn uniformly in [items_min, items_max]
 items_max: 6
 quantity_min: 1              # per-item quantity, drawn uniformly in [quantity_min, quantity_max]

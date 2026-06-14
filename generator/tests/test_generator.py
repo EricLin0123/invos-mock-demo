@@ -73,6 +73,14 @@ def test_no_brand_field():
             assert "brand" not in it
 
 
+def test_bounded_user_population():
+    """Distinct non-null carrier_ids never exceed the configured user count."""
+    cfg = small_config()
+    carriers = {inv["carrier_id"] for inv in generate(cfg, seed=42)}
+    carriers.discard(None)
+    assert 0 < len(carriers) <= cfg["users"]
+
+
 def test_schema_fields_present_and_valid():
     cfg = small_config()
     for inv in generate(cfg, seed=42):

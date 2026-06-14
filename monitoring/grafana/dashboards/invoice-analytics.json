@@ -127,8 +127,98 @@
       "gridPos": { "h": 9, "w": 8, "x": 16, "y": 13 },
       "options": {
         "mode": "markdown",
-        "content": "### What to look for\n\nStart from an **empty database** (`bash scripts/run.sh up` does not replay), then run a test (`bash scripts/run.sh smoke`).\n\n- **Total invoices / line items / revenue** tick up live as invoices arrive.\n- **Invoices ingested per 5s** and **cumulative** show the database filling from zero, by ingest time (`created_at`).\n- **Line items by commodity type** shows the generic commodity mix growing.\n\nInvoices are dated on the fly at emit time, so everything you see is happening _now_. Auto-refresh is 5s."
+        "content": "### What to look for\n\nStart from an **empty database** (`bash scripts/run.sh up` does not replay), then run a test (`bash scripts/run.sh smoke`).\n\n- **Total invoices / line items / revenue** tick up live as invoices arrive.\n- **Invoices ingested per 5s** and **cumulative** show the database filling from zero, by ingest time (`created_at`).\n- **Line items by commodity type** shows the generic commodity mix growing.\n- **User analytics** (below) track distinct consumers by `carrier_id`.\n\nInvoices are dated on the fly at emit time, so everything you see is happening _now_. Auto-refresh is 5s."
       }
+    },
+    {
+      "id": 8,
+      "title": "Distinct users (carriers)",
+      "type": "stat",
+      "datasource": { "type": "postgres", "uid": "postgres" },
+      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 22 },
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "thresholds" }, "thresholds": { "steps": [ { "color": "orange", "value": null } ] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "value", "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "postgres", "uid": "postgres" },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(DISTINCT carrier_id) AS \"distinct users\" FROM invoices"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Avg invoices / user",
+      "type": "stat",
+      "datasource": { "type": "postgres", "uid": "postgres" },
+      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 22 },
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 1, "color": { "mode": "thresholds" }, "thresholds": { "steps": [ { "color": "green", "value": null } ] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "value", "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "auto" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "postgres", "uid": "postgres" },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) FILTER (WHERE carrier_id IS NOT NULL)::numeric / NULLIF(count(DISTINCT carrier_id), 0) AS \"avg invoices/user\" FROM invoices"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "Identified invoices (%)",
+      "type": "stat",
+      "datasource": { "type": "postgres", "uid": "postgres" },
+      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 22 },
+      "fieldConfig": { "defaults": { "unit": "percent", "decimals": 1, "color": { "mode": "thresholds" }, "thresholds": { "steps": [ { "color": "blue", "value": null } ] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "value", "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "auto" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "postgres", "uid": "postgres" },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT 100.0 * count(*) FILTER (WHERE carrier_id IS NOT NULL) / NULLIF(count(*), 0) AS \"identified %\" FROM invoices"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "New users per 5s (first seen, by ingest time)",
+      "type": "timeseries",
+      "datasource": { "type": "postgres", "uid": "postgres" },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 26 },
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "bars", "fillOpacity": 40 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "single" } },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "postgres", "uid": "postgres" },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT $__timeGroupAlias(first_seen, '5s'), count(*) AS \"new users\" FROM (SELECT carrier_id, min(created_at) AS first_seen FROM invoices WHERE carrier_id IS NOT NULL GROUP BY carrier_id) u WHERE $__timeFilter(first_seen) GROUP BY 1 ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "Top 10 users by spend",
+      "type": "table",
+      "datasource": { "type": "postgres", "uid": "postgres" },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 26 },
+      "fieldConfig": { "defaults": {}, "overrides": [ { "matcher": { "id": "byName", "options": "spend (NTD)" }, "properties": [ { "id": "unit", "value": "currencyNTD" } ] } ] },
+      "options": { "showHeader": true, "cellHeight": "sm" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "postgres", "uid": "postgres" },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT carrier_id AS \"user\", count(*) AS \"invoices\", sum(total_amount) AS \"spend (NTD)\" FROM invoices WHERE carrier_id IS NOT NULL GROUP BY carrier_id ORDER BY \"spend (NTD)\" DESC LIMIT 10"
+        }
+      ]
     }
   ]
 }

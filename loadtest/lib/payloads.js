@@ -54,13 +54,24 @@ function makeMalformed(invoice) {
   return bad;
 }
 
-// Pick a random invoice from the shared pool. We intentionally allow the same invoice to
-// be drawn repeatedly across iterations and VUs: the natural key is (invoice_number,
-// invoice_date) and the API is idempotent, so a redraw is simply a duplicate. Rather than
-// fight that (mutating numbers would make them format-invalid), we let duplicates happen
-// and measure them via invos_duplicates — a real ingestion pipeline sees replays too.
+// Pick a random invoice from the shared pool — used only for its *content* (items,
+// seller, amounts). The identity (invoice_number) is replaced per emit, see below.
 function pickInvoice() {
   return invoices[Math.floor(Math.random() * invoices.length)];
+}
+
+// Mint a fresh invoice_number per emitted invoice so every POST is a real insert rather
+// than an idempotent duplicate. Without this, the finite pool saturates against the
+// (invoice_number, invoice_date) natural key and — because invoice_date is pinned to today
+// — the DB insert rate decays exponentially even though k6's offered rate is constant.
+// 2 uppercase letters + 8 digits (the schema pattern) = ~6.8e10 combinations, so over a
+// full soak collisions are well under one per second — the insert rate stays flat.
+const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+function uniqueInvoiceNumber() {
+  const a = LETTERS[Math.floor(Math.random() * 26)];
+  const b = LETTERS[Math.floor(Math.random() * 26)];
+  const digits = Math.floor(Math.random() * 1e8).toString().padStart(8, '0');
+  return a + b + digits;
 }
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
@@ -69,9 +80,9 @@ const JSON_HEADERS = { 'Content-Type': 'application/json' };
 // endpoint and each malformed one through the single endpoint (so we can assert it draws a
 // clean 4xx), and update the counters from the responses.
 export function runIteration() {
-  // Stamp the invoice_date on the fly, at emit time, so invoices arrive dated "now"
-  // rather than carrying the pool's pre-baked date. The shared pool object is read-only,
-  // so healthy invoices are shallow-cloned with today's date (items are reused as-is).
+  // Stamp a fresh identity (invoice_number) and today's date on the fly, at emit time, so
+  // each invoice arrives as a new row dated "now". The shared pool object is read-only, so
+  // healthy invoices are shallow-cloned with the new fields (items are reused as-is).
   const today = new Date().toISOString().slice(0, 10);
   const batch = [];
   const malformed = [];
@@ -82,7 +93,7 @@ export function runIteration() {
       bad.invoice_date = today;
       malformed.push(bad);
     } else {
-      batch.push({ ...inv, invoice_date: today });
+      batch.push({ ...inv, invoice_number: uniqueInvoiceNumber(), invoice_date: today });
     }
   }
 

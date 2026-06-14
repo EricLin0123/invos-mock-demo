@@ -28,7 +28,7 @@ One script brings everything up and runs the tests. Prerequisites on `PATH`: `do
 `node`, `uv`, `k6`.
 
 ```bash
-bash scripts/run.sh up        # stack + migrate + generate data + start server + replay
+bash scripts/run.sh up        # stack + migrate + generate data + start server (DB starts empty)
 bash scripts/run.sh smoke     # 5 req/s, ~1 min        (quick check)
 bash scripts/run.sh load      # ramp 0->100 req/s, hold 10 min
 bash scripts/run.sh stress    # step 100->800 req/s until a threshold breaks

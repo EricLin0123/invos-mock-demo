@@ -51,14 +51,14 @@ the `invos_ingest_duration_seconds` histogram, invoice outcome rates (created/du
 rejected), Node event-loop lag / heap / CPU, and a panel overlaying **k6 offered load** with
 the **server-observed** rate — the visual proof of open-model load testing.
 
-**Invoice Analytics** (PostgreSQL): daily invoice count & revenue, top categories by quantity,
-average invoices per day-of-week (the generator's weekend lift), and **toothpaste daily
-quantity by brand** — with the Step-2 campaign enabled, the **PearlGuard** line lifts after the
-campaign start day (2025-02-15). Every panel queries by `invoice_date` (event/simulated time),
-**not** `created_at` (ingest time) — event-time vs processing-time is a deliberate distinction.
+**Invoice Analytics** (PostgreSQL): a live view of the ingested data. Total invoices / line
+items / revenue tick up as rows arrive; **invoices ingested per 5s** and a **cumulative** line
+show the database filling from empty (by `created_at`, ingest time); and **line items by
+commodity type** shows the generic commodity mix growing. Start with an empty DB
+(`bash scripts/run.sh up` does not replay) and run a test to watch it fill.
 
-The default time range is fixed to the generator's 90-day window (2025-01-01 → 2025-04-01) so
-the historical data is visible without adjusting the picker.
+The default time range is relative (`now-15m → now`) with 5s auto-refresh, so the live ingest
+is visible without adjusting the picker.
 
 ## Editing dashboards
 

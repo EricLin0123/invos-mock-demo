@@ -1,11 +1,9 @@
 # config.yaml — tunable parameters for the simple invoice generator.
-# Same seed + same config => byte-identical NDJSON output.
+# Same seed + same config => identical numeric output (the invoice_date is always "today",
+# i.e. the run date, so invoices are never months apart).
 
 seed: 42                     # default RNG seed (override with --seed)
 count: 100000               # number of invoices to generate (override with --count)
-
-start_date: "2025-01-01"    # earliest invoice_date
-days: 90                     # invoice_date is drawn uniformly across [start_date, start_date+days)
 
 items_min: 1                 # items per invoice, drawn uniformly in [items_min, items_max]
 items_max: 6
@@ -20,14 +18,10 @@ sellers:
   - { name: "Carrefour Neihu",    tax_id: "45678901" }
   - { name: "Watsons Ximending",  tax_id: "56789012" }
 
-# Commodity catalog: category -> integer NTD price range, optional brands, descriptions.
-# A line item picks a random category, then a random description (and brand, if any).
+# Commodity catalog: category -> integer NTD price range and descriptions.
+# A line item picks a category uniformly at random, then a random description.
+# No brands — pure generic commodities.
 commodities:
-  toothpaste:
-    price_min: 45
-    price_max: 120
-    brands: ["BrightMint", "PearlGuard", "FreshWave"]
-    descriptions: ["Toothpaste 150g", "Toothpaste 200g Family Pack", "Whitening Toothpaste"]
   snacks:
     price_min: 20
     price_max: 80
@@ -40,12 +34,19 @@ commodities:
     price_min: 25
     price_max: 70
     descriptions: ["Beef Noodles Cup", "Spicy Ramen Pack", "Seafood Noodles"]
-  shampoo:
-    price_min: 90
-    price_max: 250
-    brands: ["CleanHair", "SilkyShine"]
-    descriptions: ["Shampoo 400ml", "Anti-Dandruff Shampoo", "Conditioner 350ml"]
   household_goods:
     price_min: 30
     price_max: 300
     descriptions: ["Paper Towels", "Dish Soap", "Trash Bags", "Laundry Detergent"]
+  toiletries:
+    price_min: 30
+    price_max: 250
+    descriptions: ["Shampoo 400ml", "Body Wash", "Toothpaste 150g", "Hand Soap"]
+  stationery:
+    price_min: 10
+    price_max: 150
+    descriptions: ["Notebook", "Ballpoint Pen", "Sticky Notes", "A4 Paper Ream"]
+  produce:
+    price_min: 15
+    price_max: 200
+    descriptions: ["Apples 1kg", "Bananas", "Leafy Greens", "Tomatoes 500g"]

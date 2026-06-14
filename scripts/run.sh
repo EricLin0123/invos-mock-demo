@@ -13,7 +13,6 @@ cd "$(dirname "$0")/.."   # repo root
 BASE_URL="${BASE_URL:-http://localhost:8473}"
 COUNT="${COUNT:-100000}"
 SEED="${SEED:-42}"
-NDJSON="generator/data/invoices_90d.ndjson"
 
 say() { printf '\n\033[1;36m== %s\033[0m\n' "$*"; }
 
@@ -32,14 +31,14 @@ up() {
   done
   echo " postgres ready"
 
-  say "2/6 Install server deps & migrate the schema"
+  say "2/5 Install server deps & migrate the schema"
   ( cd server && npm install --silent && npm run migrate )
 
-  say "3/6 Generate $COUNT mock invoices (seed $SEED)"
+  say "3/5 Generate $COUNT mock invoices (seed $SEED)"
   ( cd generator && uv sync --quiet && \
       uv run python -m generator --seed "$SEED" --count "$COUNT" --out data/invoices_90d.ndjson )
 
-  say "4/6 Start the ingestion server on :8473"
+  say "4/5 Start the ingestion server on :8473"
   if curl -sf "$BASE_URL/healthz" >/dev/null 2>&1; then
     echo "server already running"
   else
@@ -48,10 +47,8 @@ up() {
     echo " server up (pid $(cat /tmp/invos-server.pid), logs: /tmp/invos-server.log)"
   fi
 
-  say "5/6 Replay the generated invoices into the API"
-  ( cd server && npm run replay -- "../$NDJSON" )
-
-  say "6/6 Prepare the k6 data feed"
+  # No replay — the DB starts empty; the k6 tests are what populate it.
+  say "5/5 Prepare the k6 data feed"
   node loadtest/prepare.js
 
   cat <<EOF

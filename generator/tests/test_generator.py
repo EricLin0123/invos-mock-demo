@@ -3,6 +3,7 @@
 import hashlib
 import json
 import re
+from datetime import date
 
 from conftest import small_config
 
@@ -17,7 +18,7 @@ REQUIRED = {
     "invoice_number", "invoice_date", "random_code", "seller_tax_id",
     "seller_name", "carrier_id", "total_amount", "items",
 }
-ITEM_FIELDS = {"description", "category", "brand", "quantity", "unit_price", "amount"}
+ITEM_FIELDS = {"description", "category", "quantity", "unit_price", "amount"}
 
 
 def _serialize(invoices):
@@ -59,10 +60,17 @@ def test_totals_add_up():
         assert inv["total_amount"] == sum(it["amount"] for it in inv["items"])
 
 
-def test_chronological_order():
-    cfg = small_config()
-    dates = [inv["invoice_date"] for inv in generate(cfg, seed=42)]
-    assert dates == sorted(dates)
+def test_dated_today_not_spread():
+    """Every invoice is dated today — no multi-month spread."""
+    today = date.today().isoformat()
+    assert {inv["invoice_date"] for inv in generate(small_config(), seed=42)} == {today}
+
+
+def test_no_brand_field():
+    """Items carry no brand."""
+    for inv in generate(small_config(), seed=42):
+        for it in inv["items"]:
+            assert "brand" not in it
 
 
 def test_schema_fields_present_and_valid():

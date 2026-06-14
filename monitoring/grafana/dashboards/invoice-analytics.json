@@ -1,89 +1,113 @@
 {
   "uid": "invos-analytics",
   "title": "invos · Invoice Analytics",
-  "description": "Business view of the ingested invoices (PostgreSQL). All panels query by invoice_date (event/simulated time), NOT created_at (ingest/processing time) — event-time analytics is a deliberate talking point. Default time range covers the generator's 90-day window starting 2025-01-01.",
+  "description": "Live view of ingested invoices (PostgreSQL). Totals and the commodity-type breakdown count the whole table; the time charts use created_at (ingest time). Start with an empty DB and run a test to watch it fill.",
   "tags": ["invos", "business", "postgres"],
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "editable": true,
-  "time": { "from": "2025-01-01T00:00:00.000Z", "to": "2025-04-01T00:00:00.000Z" },
-  "refresh": "",
+  "time": { "from": "now-15m", "to": "now" },
+  "refresh": "5s",
   "timezone": "utc",
   "templating": { "list": [] },
   "annotations": { "list": [] },
   "panels": [
     {
       "id": 1,
-      "title": "Daily invoice count & revenue",
-      "type": "timeseries",
+      "title": "Total invoices",
+      "type": "stat",
       "datasource": { "type": "postgres", "uid": "postgres" },
-      "gridPos": { "h": 8, "w": 16, "x": 0, "y": 0 },
-      "fieldConfig": {
-        "defaults": { "custom": { "drawStyle": "line", "fillOpacity": 10 } },
-        "overrides": [
-          { "matcher": { "id": "byName", "options": "revenue (NTD)" }, "properties": [ { "id": "custom.axisPlacement", "value": "right" }, { "id": "unit", "value": "currencyNTD" } ] }
-        ]
-      },
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "thresholds" }, "thresholds": { "steps": [ { "color": "green", "value": null } ] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "value", "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto" },
       "targets": [
         {
           "refId": "A",
           "datasource": { "type": "postgres", "uid": "postgres" },
-          "format": "time_series",
+          "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT invoice_date AS \"time\", count(*) AS \"invoice count\", sum(total_amount) AS \"revenue (NTD)\" FROM invoices WHERE $__timeFilter(invoice_date) GROUP BY invoice_date ORDER BY invoice_date"
+          "rawSql": "SELECT count(*) AS \"total invoices\" FROM invoices"
         }
       ]
     },
     {
       "id": 2,
-      "title": "About this dashboard",
-      "type": "text",
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 0 },
-      "options": {
-        "mode": "markdown",
-        "content": "### What to look for\n\n**Toothpaste by brand** (panel below) is the ad-campaign exhibit. The Step-2 generator runs a campaign for brand **PearlGuard** starting **simulated day 45 (2025-02-15)**: ~40% of households get a 1.5× toothpaste purchase lift and shift their brand preference toward PearlGuard.\n\nWatch the **PearlGuard** line lift away from BrightMint/FreshWave after **2025-02-15**. Turn the campaign off in `generator/config.yaml` (`campaign.enabled: false`) and the lines stay tangled.\n\nThe exposed households and exact knobs are recorded in `generator/data/ground_truth.json`.\n\n_All panels use `invoice_date` (event time), not `created_at` (ingest time)._"
-      }
+      "title": "Total line items",
+      "type": "stat",
+      "datasource": { "type": "postgres", "uid": "postgres" },
+      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "thresholds" }, "thresholds": { "steps": [ { "color": "blue", "value": null } ] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "value", "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "postgres", "uid": "postgres" },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) AS \"total line items\" FROM invoice_items"
+        }
+      ]
     },
     {
       "id": 3,
-      "title": "Toothpaste daily quantity by brand (campaign lift after 2025-02-15)",
+      "title": "Total revenue (NTD)",
+      "type": "stat",
+      "datasource": { "type": "postgres", "uid": "postgres" },
+      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "currencyNTD", "color": { "mode": "thresholds" }, "thresholds": { "steps": [ { "color": "purple", "value": null } ] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "value", "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "postgres", "uid": "postgres" },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COALESCE(sum(total_amount), 0) AS \"total revenue\" FROM invoices"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Invoices ingested per 5s (by ingest time)",
       "type": "timeseries",
       "datasource": { "type": "postgres", "uid": "postgres" },
-      "gridPos": { "h": 9, "w": 16, "x": 0, "y": 8 },
-      "fieldConfig": {
-        "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 5, "lineWidth": 2 } },
-        "overrides": [
-          { "matcher": { "id": "byName", "options": "PearlGuard" }, "properties": [ { "id": "custom.lineWidth", "value": 3 } ] }
-        ]
-      },
-      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] }, "tooltip": { "mode": "multi" } },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 4 },
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "bars", "fillOpacity": 40 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "single" } },
       "targets": [
         {
           "refId": "A",
           "datasource": { "type": "postgres", "uid": "postgres" },
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT i.invoice_date AS \"time\", sum(it.quantity) FILTER (WHERE it.brand = 'BrightMint') AS \"BrightMint\", sum(it.quantity) FILTER (WHERE it.brand = 'PearlGuard') AS \"PearlGuard\", sum(it.quantity) FILTER (WHERE it.brand = 'FreshWave') AS \"FreshWave\" FROM invoice_items it JOIN invoices i ON i.id = it.invoice_id WHERE it.category = 'toothpaste' AND $__timeFilter(i.invoice_date) GROUP BY i.invoice_date ORDER BY i.invoice_date"
+          "rawSql": "SELECT $__timeGroupAlias(created_at, '5s'), count(*) AS \"invoices ingested\" FROM invoices WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1"
         }
       ]
     },
     {
-      "id": 4,
-      "title": "Campaign window",
-      "type": "text",
-      "gridPos": { "h": 9, "w": 8, "x": 16, "y": 8 },
-      "options": {
-        "mode": "markdown",
-        "content": "#### Toothpaste brands\n\n- **PearlGuard** — campaign brand\n- BrightMint — control\n- FreshWave — control\n\nBefore **2025-02-15** the three brands sit close together (per-household preference noise). After the campaign start day, PearlGuard's daily quantity pulls ahead as exposed households buy more toothpaste *and* skew toward PearlGuard.\n\nGround truth: `campaign.start_day = 45`, `lift = 1.5`, `exposed_fraction = 0.40`, `brand = PearlGuard` (see `ground_truth.json`)."
-      }
+      "id": 5,
+      "title": "Invoices in DB (cumulative)",
+      "type": "timeseries",
+      "datasource": { "type": "postgres", "uid": "postgres" },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 4 },
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "single" } },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "postgres", "uid": "postgres" },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT time, sum(c) OVER (ORDER BY time) AS \"invoices (cumulative)\" FROM (SELECT $__timeGroup(created_at, '5s') AS time, count(*) AS c FROM invoices WHERE $__timeFilter(created_at) GROUP BY 1) t ORDER BY time"
+        }
+      ]
     },
     {
-      "id": 5,
-      "title": "Top categories by quantity",
+      "id": 6,
+      "title": "Line items by commodity type",
       "type": "barchart",
       "datasource": { "type": "postgres", "uid": "postgres" },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 17 },
+      "gridPos": { "h": 9, "w": 16, "x": 0, "y": 13 },
       "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
       "options": { "xField": "category", "orientation": "horizontal", "showValue": "auto", "legend": { "showLegend": false } },
       "targets": [
@@ -92,28 +116,19 @@
           "datasource": { "type": "postgres", "uid": "postgres" },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT it.category AS \"category\", sum(it.quantity) AS \"quantity\" FROM invoice_items it JOIN invoices i ON i.id = it.invoice_id WHERE $__timeFilter(i.invoice_date) GROUP BY it.category ORDER BY \"quantity\" DESC"
+          "rawSql": "SELECT it.category AS \"category\", count(*) AS \"line items\" FROM invoice_items it GROUP BY it.category ORDER BY \"line items\" DESC"
         }
       ]
     },
     {
-      "id": 6,
-      "title": "Average invoices per day-of-week (weekend lift)",
-      "type": "barchart",
-      "description": "Mean invoices per calendar day, grouped by day of week. The generator's weekend_factor (1.25) makes Sat/Sun visibly taller than weekdays.",
-      "datasource": { "type": "postgres", "uid": "postgres" },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 17 },
-      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0 }, "overrides": [] },
-      "options": { "xField": "dow", "orientation": "vertical", "showValue": "auto", "legend": { "showLegend": false } },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": { "type": "postgres", "uid": "postgres" },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT dow, \"avg invoices/day\" FROM (SELECT to_char(invoice_date, 'Dy') AS dow, EXTRACT(dow FROM invoice_date) AS ord, count(*)::numeric / count(DISTINCT invoice_date) AS \"avg invoices/day\" FROM invoices WHERE $__timeFilter(invoice_date) GROUP BY 1, 2) t ORDER BY ord"
-        }
-      ]
+      "id": 7,
+      "title": "About this dashboard",
+      "type": "text",
+      "gridPos": { "h": 9, "w": 8, "x": 16, "y": 13 },
+      "options": {
+        "mode": "markdown",
+        "content": "### What to look for\n\nStart from an **empty database** (`bash scripts/run.sh up` does not replay), then run a test (`bash scripts/run.sh smoke`).\n\n- **Total invoices / line items / revenue** tick up live as invoices arrive.\n- **Invoices ingested per 5s** and **cumulative** show the database filling from zero, by ingest time (`created_at`).\n- **Line items by commodity type** shows the generic commodity mix growing.\n\nInvoices are dated on the fly at emit time, so everything you see is happening _now_. Auto-refresh is 5s."
+      }
     }
   ]
 }

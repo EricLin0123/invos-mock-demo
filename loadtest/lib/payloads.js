@@ -69,14 +69,20 @@ const JSON_HEADERS = { 'Content-Type': 'application/json' };
 // endpoint and each malformed one through the single endpoint (so we can assert it draws a
 // clean 4xx), and update the counters from the responses.
 export function runIteration() {
+  // Stamp the invoice_date on the fly, at emit time, so invoices arrive dated "now"
+  // rather than carrying the pool's pre-baked date. The shared pool object is read-only,
+  // so healthy invoices are shallow-cloned with today's date (items are reused as-is).
+  const today = new Date().toISOString().slice(0, 10);
   const batch = [];
   const malformed = [];
   for (let i = 0; i < BATCH_SIZE; i += 1) {
     const inv = pickInvoice();
     if (Math.random() < MALFORMED_RATE) {
-      malformed.push(makeMalformed(inv));
+      const bad = makeMalformed(inv);
+      bad.invoice_date = today;
+      malformed.push(bad);
     } else {
-      batch.push(inv);
+      batch.push({ ...inv, invoice_date: today });
     }
   }
 

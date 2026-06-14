@@ -14,13 +14,8 @@ def load_config():
 
 
 def small_config():
-    """A scaled-down config so tests run fast while staying statistically meaningful.
-
-    Fewer households/days than the default, but with the same behavioral knobs so
-    the campaign effect remains detectable.
-    """
+    """A scaled-down config so tests run fast."""
     cfg = copy.deepcopy(load_config())
-    cfg["population"]["households"] = 2500
-    cfg["simulation"]["days"] = 60
-    cfg["campaign"]["start_day"] = 20
+    cfg["count"] = 2000
+    cfg["days"] = 30
     return cfg

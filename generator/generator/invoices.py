@@ -1,158 +1,99 @@
-# invoices.py — simulates `days` of household shopping and emits invoice records.
-# This is the orchestrator: it wires together population.py and campaign.py and
-# returns chronologically ordered invoice dicts matching the Step 1 DB schema.
-# It performs NO file or network I/O — __main__.py owns writing.
-from __future__ import annotations
+# invoices.py — simple, deterministic mock e-invoice generator.
+#
+# Produces a flat list of invoice dicts matching the ingestion API's schema exactly
+# (see server/src/schemas/invoice.schema.js). No households, campaigns, or statistical
+# modelling — just N invoices with random sellers, commodities, quantities and prices.
+# A single seeded random.Random drives all randomness, so the same seed + config yields
+# byte-identical output.
 
+import random
+import string
 from datetime import date, timedelta
 
-import numpy as np
-from faker import Faker
-
-from . import campaign as campaign_mod
-from .population import build_population
-
-# Uppercase-letter pool for the two-letter invoice-number prefix.
-_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+_UPPER = string.ascii_uppercase
+_DIGITS = string.digits
+_CARRIER_CHARS = string.ascii_uppercase + string.digits
 
 
-def _bimonthly_prefix(d: date) -> str:
-    """Two-letter prefix that rotates per bimonthly period (Jan-Feb, Mar-Apr, ...).
-
-    Real Taiwanese invoice numbers reuse the same prefix within a bimonthly
-    period, which is why number alone is not a unique key (see Step 1 schema).
-    """
-    period = (d.month - 1) // 2          # 0..5 within a year
-    index = (d.year * 6 + period) % (26 * 26)
-    return _LETTERS[index // 26] + _LETTERS[index % 26]
+def _invoice_number(rng: random.Random) -> str:
+    """2 uppercase letters + 8 digits, e.g. AB12345678."""
+    letters = "".join(rng.choices(_UPPER, k=2))
+    digits = "".join(rng.choices(_DIGITS, k=8))
+    return letters + digits
 
 
-def _invoice_number(d: date, rng: np.random.Generator) -> str:
-    """2 letters (per bimonthly period) + 8 random digits, e.g. AB12345678."""
-    digits = "".join(str(x) for x in rng.integers(0, 10, size=8))
-    return _bimonthly_prefix(d) + digits
+def _random_code(rng: random.Random) -> str:
+    return "".join(rng.choices(_DIGITS, k=4))
 
 
-def _random_code(rng: np.random.Generator) -> str:
-    """4-digit verification code printed on the receipt."""
-    return "".join(str(x) for x in rng.integers(0, 10, size=4))
+def _carrier_id(rng: random.Random) -> str | None:
+    """Mobile-barcode carrier '/'+7 chars; ~30% of invoices carry none (null)."""
+    if rng.random() < 0.30:
+        return None
+    return "/" + "".join(rng.choices(_CARRIER_CHARS, k=7))
 
 
-def _pick_quantity(rng: np.random.Generator, q_values, q_probs) -> int:
-    return int(rng.choice(q_values, p=q_probs))
-
-
-def _make_item(category: str, brand, cfg: dict, rng: np.random.Generator, q_values, q_probs):
-    """Build a single line item dict for the given category."""
-    ccfg = cfg["categories"][category]
-    desc = str(rng.choice(ccfg["descriptions"]))
-    unit_price = int(rng.integers(ccfg["price_min"], ccfg["price_max"] + 1))
-    quantity = _pick_quantity(rng, q_values, q_probs)
+def _make_item(category: str, spec: dict, rng: random.Random,
+               quantity_min: int, quantity_max: int) -> dict:
+    """One line item: pick a description/brand, draw quantity and unit price, derive amount."""
+    description = rng.choice(spec["descriptions"])
+    brands = spec.get("brands") or []
+    brand = rng.choice(brands) if brands else None
+    quantity = rng.randint(quantity_min, quantity_max)
+    unit_price = rng.randint(spec["price_min"], spec["price_max"])
     return {
-        "description": desc,
+        "description": description,
         "category": category,
         "brand": brand,
         "quantity": quantity,
         "unit_price": unit_price,
-        "amount": unit_price * quantity,
+        "amount": quantity * unit_price,
     }
 
 
-def generate(cfg: dict, seed: int):
-    """Generate the full dataset.
+def generate(cfg: dict, seed: int) -> list[dict]:
+    """Generate cfg['count'] invoices deterministically from `seed`.
 
-    Returns (invoices, ground_truth):
-      * invoices: list of dicts, sorted by invoice_date (chronological).
-      * ground_truth: dict describing the campaign, or None when disabled.
-    A single numpy Generator drives all randomness so that the same seed + config
-    yields byte-identical output once serialized.
+    Returns a list of invoice dicts sorted chronologically by invoice_date.
     """
-    rng = np.random.default_rng(seed)
-    faker = Faker()
-    Faker.seed(seed)
+    rng = random.Random(seed)
 
-    pop = build_population(cfg, rng, faker)
-    campaign = campaign_mod.assign_campaign(cfg, rng, pop)
-    brand_weights = campaign_mod.shifted_brand_weights(pop, campaign)
+    count = int(cfg["count"])
+    start_date = date.fromisoformat(str(cfg["start_date"]))
+    days = int(cfg["days"])
+    items_min = int(cfg["items_min"])
+    items_max = int(cfg["items_max"])
+    quantity_min = int(cfg["quantity_min"])
+    quantity_max = int(cfg["quantity_max"])
 
-    scfg = cfg["simulation"]
-    pcfg = cfg["purchase"]
-    start_date = date.fromisoformat(scfg["start_date"])
-    days = scfg["days"]
-    base_rate = scfg["base_rate"]
-    weekend_factor = scfg["weekend_factor"]
-    items_min, items_max = pcfg["items_min"], pcfg["items_max"]
-    tp_base = pcfg["toothpaste_base_prob"]
+    sellers = cfg["sellers"]
+    commodities = cfg["commodities"]
+    categories = list(commodities.keys())
 
-    # Pre-resolve quantity distribution (keys are strings in YAML).
-    q_values = np.array([int(k) for k in pcfg["quantity_weights"]], dtype=int)
-    q_probs = np.array(list(pcfg["quantity_weights"].values()), dtype=float)
-    q_probs = q_probs / q_probs.sum()
-
-    # Non-toothpaste category sampling distribution.
-    other_categories = list(cfg["category_weights"].keys())
-    other_weights = np.array(list(cfg["category_weights"].values()), dtype=float)
-    other_weights = other_weights / other_weights.sum()
-
-    n = pop.size
     invoices: list[dict] = []
+    for _ in range(count):
+        current = start_date + timedelta(days=rng.randrange(days))
+        seller = rng.choice(sellers)
 
-    for d in range(days):
-        current = start_date + timedelta(days=d)
-        weekend = current.weekday() >= 5  # 5=Sat, 6=Sun
-        wf = weekend_factor if weekend else 1.0
+        n_items = rng.randint(items_min, items_max)
+        items = [
+            _make_item(cat := rng.choice(categories), commodities[cat], rng,
+                       quantity_min, quantity_max)
+            for _ in range(n_items)
+        ]
+        total = sum(it["amount"] for it in items)
 
-        # Vectorized daily shopping decision for all households at once.
-        probs = np.clip(base_rate * pop.multipliers * wf, 0.0, 1.0)
-        draws = rng.random(n)
-        shoppers = np.nonzero(draws < probs)[0]
+        invoices.append({
+            "invoice_number": _invoice_number(rng),
+            "invoice_date": current.isoformat(),
+            "random_code": _random_code(rng),
+            "seller_tax_id": seller["tax_id"],
+            "seller_name": seller["name"],
+            "carrier_id": _carrier_id(rng),
+            "total_amount": total,
+            "items": items,
+        })
 
-        for h in int_iter(shoppers):
-            # Pick one preferred store for this trip.
-            store_idx = int(rng.choice(pop.preferred_stores[h]))
-            n_items = int(rng.integers(items_min, items_max + 1))
-
-            # Toothpaste decision (separately controllable so the campaign is testable).
-            tp_prob = tp_base
-            if campaign_mod.is_campaign_active(campaign, d, h):
-                tp_prob = min(tp_prob * campaign.lift, 1.0)
-
-            items = []
-            if rng.random() < tp_prob:
-                brand_idx = int(rng.choice(len(pop.brands), p=brand_weights[h]))
-                items.append(
-                    _make_item("toothpaste", pop.brands[brand_idx], cfg, rng, q_values, q_probs)
-                )
-
-            # Remaining items from the non-toothpaste catalog.
-            while len(items) < n_items:
-                cat = str(rng.choice(other_categories, p=other_weights))
-                items.append(_make_item(cat, None, cfg, rng, q_values, q_probs))
-
-            total = sum(it["amount"] for it in items)
-            invoices.append(
-                {
-                    "invoice_number": _invoice_number(current, rng),
-                    "invoice_date": current.isoformat(),
-                    "random_code": _random_code(rng),
-                    "seller_tax_id": pop.store_tax_ids[store_idx],
-                    "seller_name": pop.store_names[store_idx],
-                    "carrier_id": pop.carrier_ids[h],
-                    "total_amount": total,
-                    "items": items,
-                }
-            )
-
-    # Already produced in day order; sort defensively to guarantee chronological output.
+    # Sort chronologically so downstream replay/analytics see date-ordered data.
     invoices.sort(key=lambda inv: inv["invoice_date"])
-
-    ground_truth = (
-        campaign_mod.build_ground_truth(cfg, pop, campaign) if campaign.enabled else None
-    )
-    return invoices, ground_truth
-
-
-def int_iter(arr: np.ndarray):
-    """Yield Python ints from a numpy index array (readability helper)."""
-    for x in arr:
-        yield int(x)
+    return invoices

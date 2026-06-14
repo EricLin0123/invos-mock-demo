@@ -1,45 +1,31 @@
-# config.yaml — ALL tunable parameters for the invoice generator live here.
-# Edit values, re-run `uv run python -m generator`, and the statistical
-# properties of the output change accordingly. Every knob is commented.
+# config.yaml — tunable parameters for the simple invoice generator.
+# Same seed + same config => byte-identical NDJSON output.
 
-# Default RNG seed. Overridable with --seed on the CLI.
-# Same seed + same config => byte-identical output.
-seed: 42
+seed: 42                     # default RNG seed (override with --seed)
+count: 100000               # number of invoices to generate (override with --count)
 
-population:
-  households: 5000          # number of distinct households (each = one carrier_id)
-  # Per-household shopping-frequency multiplier ~ Gamma(shape, scale).
-  # shape=2, scale=0.5 => mean 1.0, right-skewed: a few heavy shoppers, many light ones.
-  frequency_gamma_shape: 2.0
-  frequency_gamma_scale: 0.5
-  stores_in_catalog: 40     # size of the seller catalog
-  preferred_stores_min: 3   # each household shops at 3..5 preferred stores
-  preferred_stores_max: 5
+start_date: "2025-01-01"    # earliest invoice_date
+days: 90                     # invoice_date is drawn uniformly across [start_date, start_date+days)
 
-simulation:
-  days: 90                  # number of simulated days
-  start_date: "2025-01-01"  # date of simulated day 0 (affects bimonthly invoice-number prefix)
-  base_rate: 0.20           # baseline daily probability a household shops
-  weekend_factor: 1.25      # weekends (Sat/Sun) multiply the daily shopping probability
+items_min: 1                 # items per invoice, drawn uniformly in [items_min, items_max]
+items_max: 6
+quantity_min: 1              # per-item quantity, drawn uniformly in [quantity_min, quantity_max]
+quantity_max: 3
 
-purchase:
-  items_min: 1              # items per invoice are drawn uniformly in [items_min, items_max]
-  items_max: 6
-  # Probability that a given invoice contains a toothpaste line (before any campaign lift).
-  # Kept as an explicit knob so the campaign effect is clean and statistically testable.
-  toothpaste_base_prob: 0.18
-  quantity_weights:         # P(quantity = 1,2,3) for any line item
-    "1": 0.7
-    "2": 0.22
-    "3": 0.08
+# Sellers are picked at random per invoice. tax_id must be 8 digits.
+sellers:
+  - { name: "FamilyMart Da'an",   tax_id: "12345678" }
+  - { name: "7-Eleven Xinyi",     tax_id: "23456789" }
+  - { name: "PXMart Zhongshan",   tax_id: "34567890" }
+  - { name: "Carrefour Neihu",    tax_id: "45678901" }
+  - { name: "Watsons Ximending",  tax_id: "56789012" }
 
-# Product catalog. Each category has an integer NTD unit-price range [min, max].
-# Must include toothpaste plus >=5 other everyday categories (per spec).
-categories:
+# Commodity catalog: category -> integer NTD price range, optional brands, descriptions.
+# A line item picks a random category, then a random description (and brand, if any).
+commodities:
   toothpaste:
     price_min: 45
     price_max: 120
-    # Three named mock brands. Per-household brand preference is generated in population.py.
     brands: ["BrightMint", "PearlGuard", "FreshWave"]
     descriptions: ["Toothpaste 150g", "Toothpaste 200g Family Pack", "Whitening Toothpaste"]
   snacks:
@@ -57,25 +43,9 @@ categories:
   shampoo:
     price_min: 90
     price_max: 250
+    brands: ["CleanHair", "SilkyShine"]
     descriptions: ["Shampoo 400ml", "Anti-Dandruff Shampoo", "Conditioner 350ml"]
   household_goods:
     price_min: 30
     price_max: 300
     descriptions: ["Paper Towels", "Dish Soap", "Trash Bags", "Laundry Detergent"]
-# Relative weights for picking NON-toothpaste categories on a line item.
-# (Toothpaste is decided separately via toothpaste_base_prob.)
-category_weights:
-  snacks: 1.0
-  beverages: 1.0
-  instant_noodles: 0.8
-  shampoo: 0.4
-  household_goods: 0.6
-
-# Optional "ad campaign" effect — the commercial that later dashboards should detect.
-campaign:
-  enabled: true
-  start_day: 45             # campaign begins on this simulated day (0-indexed)
-  exposed_fraction: 0.40    # fraction of households exposed to the campaign
-  lift: 1.5                 # exposed households' toothpaste purchase prob is multiplied by this
-  brand: "PearlGuard"       # exposed households' brand preference shifts toward this brand
-  brand_shift: 0.5          # 0..1: how strongly exposed preference moves toward campaign.brand

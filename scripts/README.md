@@ -1,5 +1,20 @@
 # scripts — repo-level helper scripts
 
+## run.sh
+
+The main entry point: bring the stack up, then run any of the four k6 tests.
+
+```bash
+bash scripts/run.sh up                       # stack + migrate + generate + server + replay
+bash scripts/run.sh smoke|load|stress|soak   # run that k6 profile (Prometheus overlay ON)
+bash scripts/run.sh down                      # stop everything (WIPE_DATA=1 also drops volumes)
+```
+
+Env knobs: `COUNT` (invoices to generate on `up`, default `100000`), `SEED` (default `42`),
+`BASE_URL` (default `http://localhost:8473`). `up` starts the Fastify server on the host
+(pid in `/tmp/invos-server.pid`, logs in `/tmp/invos-server.log`); `down` delegates to
+`stop-demo.sh`.
+
 ## demo.sh
 
 The end-to-end demo path. From a fresh checkout it brings up the stack, migrates, generates

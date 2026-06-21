@@ -45,6 +45,17 @@ spec:
             # Small per-pod pool; PgBouncer does the real pooling. See db.js + k8s/README.md.
             - name: PG_POOL_MAX
               value: "5"
+          # Startup probe gates the liveness probe: until /healthz succeeds once, liveness
+          # does NOT run, so the pod is never killed while it legitimately waits for Postgres
+          # + PgBouncer to come up on a cold `up` (first-boot image pull + initdb). Without
+          # this, liveness restarts the pod mid-startup and it CrashLoopBackOffs for minutes,
+          # which looks like "Postgres is slow". Allows ~150s (30 × 5s) for the DB to appear.
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 30
           readinessProbe:
             httpGet:
               path: /healthz
@@ -56,9 +67,9 @@ spec:
             httpGet:
               path: /healthz
               port: http
-            initialDelaySeconds: 10
             periodSeconds: 10
-            # /healthz returns 503 on a DB blip; tolerate a few before restarting.
+            # /healthz returns 503 on a DB blip; tolerate a few before restarting. Only
+            # active after the startupProbe has already succeeded once.
             failureThreshold: 6
           resources:
             requests:

@@ -5,40 +5,54 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 A small Fastify service that ingests mock Taiwanese e-invoice data into PostgreSQL,
-built to be **load-tested**. Four cooperating parts:
+built to be **load-tested** and **horizontally autoscaled on Kubernetes**. Four cooperating
+parts:
 
 - `generator/` — Python 3.12 (managed by `uv`) that writes deterministic mock invoices as
   **NDJSON only** (no DB, no network).
-- `server/` — Node 20 + Fastify ingestion API on host `:8473`, validates and idempotently
-  persists invoices, exposes Prometheus metrics at `/metrics`.
-- `loadtest/` — four k6 profiles (smoke / load / stress / soak) driving the API.
+- `server/` — Node 20 + Fastify ingestion API on `:8473`, validates and idempotently
+  persists invoices, exposes Prometheus metrics at `/metrics`. Containerized (`server/Dockerfile`).
+- `loadtest/` — five k6 profiles (smoke / load / stress / scale / soak) driving the API.
 - `monitoring/` — Prometheus + Grafana, provisioned as code.
+- `k8s/` — kustomize manifests for the whole stack on a local **kind** cluster (see `k8s/README.md`).
 
-The DB (Postgres 16), Prometheus, and Grafana run in Docker Compose; **the server runs on
-the host**, not in compose. Compose reaches it via `host.docker.internal` (`extra_hosts:
-host-gateway`).
+**Everything runs inside a local Kubernetes (kind) cluster** in namespace `invos`: the ingest
+API as a scalable `Deployment` behind an HPA, Postgres as a single-replica `StatefulSet`
+(+ PgBouncer), Prometheus (Kubernetes service-discovery), Grafana, kube-state-metrics, and
+metrics-server. **There is no host-run server anymore.** k6 stays on the host and targets the
+kind NodePort (`localhost:8473`). `kind-config.yaml` (repo root) maps NodePorts → localhost
+(8473 ingest, 8474 Grafana, 9090 Prometheus). The old `docker-compose.yml` + host-server path
+is **deprecated**, kept only as a one-release fallback.
 
 ## Commands
 
-`scripts/run.sh` is the one-command path; it brings up compose, migrates, generates data,
-starts the server, and prepares the k6 feed. **`up` starts with an empty DB — it does not
-replay.** The k6 tests are what populate the DB.
+`scripts/run.sh` is the one-command path; on `up` it creates the kind cluster, builds and
+`kind load`s the server image, installs metrics-server, applies `k8s/` (plus ConfigMaps
+generated from `monitoring/`), runs the migrate Job, generates data, and prepares the k6 feed.
+**`up` starts with an empty DB — it does not replay.** The k6 tests are what populate the DB.
 
 ```bash
-bash scripts/run.sh up        # stack + migrate + generate + start server (empty DB)
+bash scripts/run.sh up        # kind cluster + image + manifests + migrate + generate (empty DB)
 bash scripts/run.sh smoke     # 5 req/s, ~1 min
 bash scripts/run.sh load      # ramp 0->100 req/s, hold 10 min
 bash scripts/run.sh stress    # step 100->800 req/s until a threshold breaks
+bash scripts/run.sh scale     # ramp UP then DOWN — drives the HPA so pods grow then shrink
 bash scripts/run.sh soak      # 50 req/s, 60 min
-bash scripts/run.sh down      # stop everything; WIPE_DATA=1 also drops data volumes
+bash scripts/run.sh down      # delete the cluster (WIPE_DATA=1 too — the PVC goes with it)
 ```
 
-`up` knobs: `COUNT` (invoices to generate, default 100000), `SEED` (default 42).
+`up` knobs: `COUNT` (invoices, default 100000), `SEED` (default 42), `CLUSTER` (kind name,
+default `invos`), `IMAGE` (server tag, default `invos-ingest:dev`).
+
+Watch autoscaling: `kubectl get hpa,pods -n invos -w`, plus the Grafana "Autoscaling" panel.
 
 Lower-level entry points:
 
 ```bash
-# server (run from server/)
+# image (build from repo ROOT so db/migrations is included), then load into kind
+docker build -f server/Dockerfile -t invos-ingest:dev . && kind load docker-image invos-ingest:dev --name invos
+
+# server (run from server/; local dev outside the cluster)
 npm run migrate        # apply db/migrations/*.sql in filename order
 npm run start          # ingestion API on :8473
 npm run dev            # same, with --watch
@@ -51,8 +65,8 @@ uv run --extra test pytest                       # all generator tests
 uv run --extra test pytest tests/test_generator.py::test_totals_add_up   # one test
 
 # k6 (from repo root; targets cd into loadtest/ so open() resolves the data file)
-make k6-smoke | k6-load | k6-stress | k6-soak    # set K6_PROM=1 to push metrics to Prometheus
-make k6-verify                                   # post-run DB consistency checks (loadtest/verify.sql)
+make k6-smoke | k6-load | k6-stress | k6-scale | k6-soak  # set K6_PROM=1 to push metrics to Prometheus
+make k6-verify                                   # post-run DB checks via `kubectl exec` into the Postgres pod
 ```
 
 Grafana: http://localhost:8474 · Prometheus: http://localhost:9090.
@@ -78,7 +92,18 @@ Grafana: http://localhost:8474 · Prometheus: http://localhost:9090.
   `POST /api/invoices/batch` (tagged `expected:ok`); ~2% malformed payloads go to
   `POST /api/invoices` (tagged `expected:reject`, asserting 4xx and never 5xx). See
   `loadtest/README.md` for thresholds and the documented stress failure point (p99 tail
-  breaks first near ~400 req/s; suspected bottleneck is the default pg pool `max: 10`).
+  breaks first near ~400 req/s; suspected bottleneck was the default pg pool `max: 10`). On
+  K8s this bottleneck is **moved**: per-pod `PG_POOL_MAX=5` + PgBouncer let the autoscaled
+  fleet raise throughput instead of exhausting Postgres. The new **`scale`** profile ramps up
+  *and back down* (no `abortOnFail`) to exercise HPA grow/shrink, vs. `stress` which aborts at
+  the wall.
+
+- **Autoscaling (K8s).** The ingest `Deployment` has an HPA (`k8s/ingest-hpa.yaml`, CPU
+  utilization by default; opt-in custom requests/second via `prometheus-adapter.yaml` +
+  `ingest-hpa-custom.yaml` — apply only one HPA). `requests.cpu: 150m` is deliberately small so
+  a few hundred req/s saturate a pod and force scale-out; scale-down stabilization is tuned to
+  30s so the shrink is watchable. **Resource requests are mandatory** for CPU HPA. See
+  `k8s/README.md`.
 
 - **Generator ↔ live traffic split.** The generator dates every invoice **today** and the k6
   layer **re-stamps `invoice_number` and `invoice_date` at emit time** (`loadtest/lib/payloads.js`,
@@ -90,8 +115,9 @@ Grafana: http://localhost:8474 · Prometheus: http://localhost:9090.
 - **Metrics.** Custom Prometheus metrics live in `server/src/metrics.js`:
   `invos_ingest_requests_total{route,status}`, `invos_ingest_invoices_total{result}`
   (created|duplicate|rejected), `invos_ingest_duration_seconds` (histogram). Grafana has two
-  dashboards: **System Performance** (Prometheus — service health + k6 load) and **Invoice
-  Analytics** (Postgres — business data, including user analytics keyed on `carrier_id`).
+  dashboards: **System Performance** (Prometheus — service health + k6 load, now incl. the
+  **Autoscaling — replicas vs offered load vs p99** panel fed by kube-state-metrics) and
+  **Invoice Analytics** (Postgres — business data, including user analytics keyed on `carrier_id`).
 
 - **Known schema drift:** the DB (`db/migrations/001_init.sql`) and `insertInvoice` still
   carry a nullable `brand` column on items, but the simplified generator no longer emits
@@ -107,9 +133,15 @@ Grafana: http://localhost:8474 · Prometheus: http://localhost:9090.
 ## Environment / gotchas
 
 - Server DB config: `DATABASE_URL` takes precedence, else `PG*` vars with localhost defaults
-  (`invos` / `devonly` / `invoices`, port 5432) — see `server/src/db.js`.
-- **ufw firewall:** Prometheus scrapes the host server via `host.docker.internal`; with ufw
-  enabled, bridge→host packets may be dropped, leaving the scrape target `down`. See
-  `monitoring/README.md` for the allow rule.
+  (`invos` / `devonly` / `invoices`, port 5432) — see `server/src/db.js`. `PG_POOL_MAX`
+  (default 10) caps the per-process pool; on K8s it is set to 5 per pod.
+- **kind image loading:** rebuilding the server image requires
+  `kind load docker-image invos-ingest:dev --name invos` before pods pick it up — a stale
+  image is the classic "my fix didn't apply" trap. `run.sh up` always does this. The image
+  must be built from the **repo root** (`-f server/Dockerfile .`) so it carries `db/migrations`.
+- **Prometheus scrape is now in-cluster** (Kubernetes SD over pods labelled `app=invos-ingest`),
+  so the old ufw `host.docker.internal` bridge→host issue is gone. The host↔cluster hops to
+  verify instead are k6 → NodePort `localhost:8473` and k6 remote-write → `localhost:9090`.
+  (The ufw note still applies to the deprecated compose path; see `monitoring/README.md`.)
 - Prometheus runs with `--web.enable-remote-write-receiver` so `K6_PROM=1` (k6
   `-o experimental-prometheus-rw`) can push metrics live.

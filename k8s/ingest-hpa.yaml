@@ -1,0 +1,47 @@
+# HorizontalPodAutoscaler for the ingest Deployment — the heart of the demo.
+#
+# Metric: CPU utilization (the reliable baseline). Each healthy request is a 50-item batch
+# that is JSON-parsed + Ajv-validated + consistency-reduced — real CPU work — so CPU tracks
+# offered RPS closely. requests.cpu is 150m (see ingest-deployment.yaml), so ~a few hundred
+# req/s saturates a pod and forces scale-out. CPU metrics come from metrics-server (one
+# install, always works on kind).
+#
+# For the custom requests-per-second metric instead (more on-message but needs
+# prometheus-adapter), see ingest-hpa-custom.yaml — apply ONE of the two, not both.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: invos-ingest
+  namespace: invos
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: invos-ingest
+  minReplicas: 1
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60
+  behavior:
+    scaleUp:
+      # React quickly to climbing load so the grow is visible during a ramp.
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Pods
+          value: 4
+          periodSeconds: 15
+      selectPolicy: Max
+    scaleDown:
+      # Default is 300s, which makes the shrink too slow to watch in one demo run.
+      # 30s shrinks within ~1 min of traffic stopping, still damped enough not to flap.
+      stabilizationWindowSeconds: 30
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 30
+      selectPolicy: Max

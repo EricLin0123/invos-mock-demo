@@ -1,0 +1,8 @@
+# All invos-mock-demo objects live in their own namespace so the demo is easy to
+# inspect (`kubectl get all -n invos`) and tear down.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: invos
+  labels:
+    app.kubernetes.io/part-of: invos-mock-demo

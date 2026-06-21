@@ -1,0 +1,77 @@
+# Prometheus moved INTO the cluster (it used to scrape the host via host.docker.internal).
+# Now it scrapes the autoscaled ingest pods through Kubernetes service-discovery, so a
+# changing set of ephemeral pod IPs is handled automatically. Still keeps the remote-write
+# receiver enabled so host k6 (K6_PROM=1) can push its metrics in.
+#
+# The scrape config is mounted from the `prometheus-config` ConfigMap, which run.sh
+# generates verbatim from monitoring/prometheus/prometheus.yml (single source of truth).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: invos
+  labels:
+    app: prometheus
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+    spec:
+      serviceAccountName: prometheus
+      containers:
+        - name: prometheus
+          image: prom/prometheus:v2.55.1
+          args:
+            - "--config.file=/etc/prometheus/prometheus.yml"
+            - "--web.enable-remote-write-receiver"
+            - "--storage.tsdb.retention.time=6h"
+          ports:
+            - name: web
+              containerPort: 9090
+          volumeMounts:
+            - name: config
+              mountPath: /etc/prometheus
+            - name: data
+              mountPath: /prometheus
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: web
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      volumes:
+        - name: config
+          configMap:
+            name: prometheus-config
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: invos
+  labels:
+    app: prometheus
+spec:
+  type: NodePort
+  selector:
+    app: prometheus
+  ports:
+    - name: web
+      port: 9090
+      targetPort: 9090
+      # Surfaced on localhost:9090 by kind, so host k6 remote-write (K6_PROM=1) reaches it.
+      nodePort: 30909

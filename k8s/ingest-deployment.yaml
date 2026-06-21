@@ -1,0 +1,69 @@
+# The ingest API as a horizontally-scalable Deployment. Starts at replicas:1; the HPA
+# (ingest-hpa.yaml) owns the replica count after the first apply.
+#
+# CRITICAL for autoscaling: resource *requests* must be set, because CPU-based HPA scales
+# on usage-as-a-fraction-of-request. requests.cpu is deliberately modest (150m) so a few
+# hundred req/s of JSON-parse + Ajv-validate work saturates a pod and forces scale-out.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: invos-ingest
+  namespace: invos
+  labels:
+    app: invos-ingest
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: invos-ingest
+  template:
+    metadata:
+      labels:
+        app: invos-ingest
+      annotations:
+        # Hint for Prometheus pod service-discovery (see monitoring/prometheus/prometheus.yml).
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8473"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+        - name: invos-ingest
+          image: invos-ingest:dev
+          # kind loads this exact tag locally; never pull from a registry.
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8473
+          env:
+            - name: PORT
+              value: "8473"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: DATABASE_URL
+            # Small per-pod pool; PgBouncer does the real pooling. See db.js + k8s/README.md.
+            - name: PG_POOL_MAX
+              value: "5"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            # /healthz returns 503 on a DB blip; tolerate a few before restarting.
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 150m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi

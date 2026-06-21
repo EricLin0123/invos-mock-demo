@@ -3,3 +3,9 @@ node_modules/
 
 # Step 4: k6 data feed is generated from the Step-2 NDJSON by loadtest/prepare.js.
 loadtest/data/
+
+# Kubernetes: rendered manifests and local kubeconfig artifacts are never committed.
+k8s/rendered/
+*.kubeconfig
+kubeconfig
+*.tmp.yaml

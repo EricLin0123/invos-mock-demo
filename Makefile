@@ -17,7 +17,7 @@ PROM_OUT := $(if $(K6_PROM),-o experimental-prometheus-rw,)
 export BASE_URL
 export K6_PROMETHEUS_RW_SERVER_URL
 
-.PHONY: k6-prepare k6-smoke k6-load k6-stress k6-soak k6-verify
+.PHONY: k6-prepare k6-smoke k6-load k6-stress k6-scale k6-soak k6-verify
 
 # Convert the Step-2 NDJSON into loadtest/data/chunks.json (run once before the profiles).
 k6-prepare:
@@ -32,12 +32,19 @@ k6-load: k6-data
 k6-stress: k6-data
 	cd loadtest && $(K6) run $(PROM_OUT) profiles/stress.js
 
+# Drive the HPA up and back down (autoscaling demo). See loadtest/profiles/scale.js.
+k6-scale: k6-data
+	cd loadtest && $(K6) run $(PROM_OUT) profiles/scale.js
+
 k6-soak: k6-data
 	cd loadtest && $(K6) run $(PROM_OUT) profiles/soak.js
 
-# Post-run database consistency checks.
+# Post-run database consistency checks. Now that Postgres runs in the cluster, exec into the
+# StatefulSet pod via kubectl instead of `docker compose exec`.
+KUBECTL ?= kubectl
+NAMESPACE ?= invos
 k6-verify:
-	docker compose exec -T postgres psql -U invos -d invoices -f - < loadtest/verify.sql
+	$(KUBECTL) exec -n $(NAMESPACE) -i statefulset/postgres -- psql -U invos -d invoices -f - < loadtest/verify.sql
 
 # Internal: ensure the prepared data file exists before running a profile.
 k6-data:

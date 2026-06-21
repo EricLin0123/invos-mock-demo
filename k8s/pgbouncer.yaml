@@ -1,0 +1,96 @@
+# PgBouncer — transaction-pooling proxy in front of Postgres.
+#
+# Why it exists: horizontally scaling the ingest app multiplies DB connections (each pod
+# opens its own pg Pool). 8 pods × even a small pool would crowd Postgres' max_connections.
+# PgBouncer fans the whole app fleet into a bounded server-side connection set, so scaling
+# the app raises throughput instead of exhausting Postgres. This is the proper fix for the
+# documented "p99 breaks ~400 req/s, pool max:10" bottleneck — it MOVES the wall.
+#
+# Transaction mode is safe here: node-postgres uses unnamed prepared statements and wraps
+# each batch insert in an explicit transaction, both fine under transaction pooling.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pgbouncer
+  namespace: invos
+  labels:
+    app: pgbouncer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pgbouncer
+  template:
+    metadata:
+      labels:
+        app: pgbouncer
+    spec:
+      containers:
+        - name: pgbouncer
+          image: edoburu/pgbouncer:1.23.1-p2
+          ports:
+            - name: pgbouncer
+              containerPort: 6432
+          env:
+            - name: DB_HOST
+              value: postgres
+            - name: DB_PORT
+              value: "5432"
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_USER
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_PASSWORD
+            - name: DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_DB
+            - name: LISTEN_PORT
+              value: "6432"
+            - name: POOL_MODE
+              value: transaction
+            # Many app clients fan into a small bounded set of server connections.
+            - name: MAX_CLIENT_CONN
+              value: "500"
+            - name: DEFAULT_POOL_SIZE
+              value: "25"
+            - name: AUTH_TYPE
+              value: scram-sha-256
+          readinessProbe:
+            tcpSocket:
+              port: 6432
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: 6432
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pgbouncer
+  namespace: invos
+  labels:
+    app: pgbouncer
+spec:
+  selector:
+    app: pgbouncer
+  ports:
+    - name: pgbouncer
+      port: 6432
+      targetPort: 6432

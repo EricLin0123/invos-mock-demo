@@ -1,0 +1,21 @@
+# kind cluster config — maps NodePorts onto localhost so host-side k6 and the browser reach
+# the in-cluster services without port-forwarding:
+#   localhost:8473 -> NodePort 30847 (ingest API)      — k6 BASE_URL
+#   localhost:8474 -> NodePort 30848 (Grafana)         — browser
+#   localhost:9090 -> NodePort 30909 (Prometheus)      — k6 remote-write (K6_PROM=1)
+# A single control-plane node is enough; the HPA scales pods, not nodes.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: invos
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      - containerPort: 30847
+        hostPort: 8473
+        protocol: TCP
+      - containerPort: 30848
+        hostPort: 8474
+        protocol: TCP
+      - containerPort: 30909
+        hostPort: 9090
+        protocol: TCP

@@ -1,0 +1,31 @@
+# kustomize base for the invos-mock-demo app stack. Apply with `kubectl apply -k k8s/`.
+#
+# ConfigMaps for Grafana provisioning, the dashboards, and the Prometheus scrape config are
+# NOT generated here — kubectl's kustomize forbids referencing files outside k8s/ (load
+# restrictor). run.sh instead creates them with `kubectl create configmap --from-file` from
+# the real monitoring/ files, so those stay the single source of truth. run.sh applies the
+# namespace + those ConfigMaps BEFORE `kubectl apply -k k8s/`.
+#
+# Default scaling path is CPU (ingest-hpa.yaml). The custom requests-per-second path
+# (prometheus-adapter.yaml + ingest-hpa-custom.yaml) is opt-in and intentionally excluded.
+#
+# migrate-job.yaml is also excluded on purpose: a Job's pod template is immutable, so run.sh
+# deletes + re-applies it as a separate step (otherwise a second `apply -k` would error).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: invos
+
+resources:
+  - namespace.yaml
+  - postgres-secret.yaml
+  - postgres-statefulset.yaml
+  - postgres-svc.yaml
+  - pgbouncer.yaml
+  - ingest-deployment.yaml
+  - ingest-svc.yaml
+  - ingest-hpa.yaml
+  - prometheus-rbac.yaml
+  - prometheus-deployment.yaml
+  - grafana-deployment.yaml
+  - kube-state-metrics.yaml

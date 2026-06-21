@@ -1,0 +1,20 @@
+# Build context is the repo root (see server/Dockerfile). Keep the image lean and
+# deterministic: never copy host node_modules, generated data, or local tooling state.
+**/node_modules
+**/.git
+**/.DS_Store
+
+# Generated / cached artifacts
+generator/data
+generator/.venv
+generator/.pytest_cache
+generator/**/__pycache__
+loadtest/data
+
+# Nothing host-specific or non-server is needed in the image
+monitoring
+k8s
+docs
+scripts
+loadtest
+*.log

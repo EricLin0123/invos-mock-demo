@@ -1,0 +1,174 @@
+# prometheus-adapter — serves custom.metrics.k8s.io from Prometheus queries, enabling the
+# custom requests-per-second HPA (ingest-hpa-custom.yaml). OPTIONAL: only needed for the
+# custom-metric scaling path; the default CPU HPA does not require this.
+#
+# It registers a self-signed serving cert automatically (no cert files passed), and the
+# APIService below sets insecureSkipTLSVerify for the demo. Apply with:
+#   kubectl apply -f k8s/prometheus-adapter.yaml
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus-adapter
+  namespace: invos
+---
+# Read the custom-metrics rules from a ConfigMap. The rule turns the counter
+# invos_ingest_requests_total into a per-pod rate metric the HPA can target.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-adapter-config
+  namespace: invos
+data:
+  config.yaml: |
+    rules:
+      - seriesQuery: 'invos_ingest_requests_total{namespace!="",pod!=""}'
+        resources:
+          overrides:
+            namespace: { resource: "namespace" }
+            pod: { resource: "pod" }
+        name:
+          matches: "^invos_ingest_requests_total$"
+          as: "invos_ingest_requests_per_second"
+        # Per-pod request rate over a 2m window; <<.GroupBy>> keeps the pod dimension so the
+        # HPA gets one value per pod and averages them.
+        metricsQuery: 'sum(rate(<<.Series>>{<<.LabelMatchers>>}[2m])) by (<<.GroupBy>>)'
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: invos-prometheus-adapter-resources
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces", "pods", "services", "nodes"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: invos-prometheus-adapter-resources
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: invos-prometheus-adapter-resources
+subjects:
+  - kind: ServiceAccount
+    name: prometheus-adapter
+    namespace: invos
+---
+# Allow the adapter to authenticate incoming aggregation-layer requests.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: invos-prometheus-adapter:system:auth-delegator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:auth-delegator
+subjects:
+  - kind: ServiceAccount
+    name: prometheus-adapter
+    namespace: invos
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: invos-prometheus-adapter-auth-reader
+  namespace: kube-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: extension-apiserver-authentication-reader
+subjects:
+  - kind: ServiceAccount
+    name: prometheus-adapter
+    namespace: invos
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus-adapter
+  namespace: invos
+  labels:
+    app: prometheus-adapter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus-adapter
+  template:
+    metadata:
+      labels:
+        app: prometheus-adapter
+    spec:
+      serviceAccountName: prometheus-adapter
+      containers:
+        - name: prometheus-adapter
+          image: registry.k8s.io/prometheus-adapter/prometheus-adapter:v0.12.0
+          args:
+            - --secure-port=6443
+            - --cert-dir=/tmp/cert
+            - --prometheus-url=http://prometheus.invos.svc:9090/
+            - --metrics-relist-interval=30s
+            - --config=/etc/adapter/config.yaml
+            - --v=4
+          ports:
+            - name: https
+              containerPort: 6443
+          volumeMounts:
+            - name: config
+              mountPath: /etc/adapter
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: https
+              scheme: HTTPS
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+      volumes:
+        - name: config
+          configMap:
+            name: prometheus-adapter-config
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus-adapter
+  namespace: invos
+  labels:
+    app: prometheus-adapter
+spec:
+  selector:
+    app: prometheus-adapter
+  ports:
+    - name: https
+      port: 443
+      targetPort: 6443
+---
+# Register the adapter as the backend for the custom metrics API group.
+apiVersion: apiregistration.k8s.io/v1
+kind: APIService
+metadata:
+  name: v1beta1.custom.metrics.k8s.io
+spec:
+  service:
+    name: prometheus-adapter
+    namespace: invos
+    port: 443
+  group: custom.metrics.k8s.io
+  version: v1beta1
+  insecureSkipTLSVerify: true
+  groupPriorityMinimum: 100
+  versionPriority: 100

@@ -1,0 +1,16 @@
+# Stable in-cluster DNS for Postgres: `postgres:5432`. Grafana's Postgres datasource and
+# the migrate Job connect here directly; the app goes through PgBouncer instead.
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: invos
+  labels:
+    app: postgres
+spec:
+  selector:
+    app: postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432

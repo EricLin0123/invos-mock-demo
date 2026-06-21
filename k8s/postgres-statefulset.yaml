@@ -1,0 +1,67 @@
+# Postgres is the deliberate shared bottleneck — a SINGLE replica StatefulSet with a PVC.
+# We never scale it; scaling the *app* in front of it (and pooling via PgBouncer) is the
+# whole point of the autoscaling demo. The StatefulSet gives stable storage + a stable
+# network identity (postgres-0) behind the headless-capable Service.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: invos
+  labels:
+    app: postgres
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16
+          ports:
+            - name: postgres
+              containerPort: 5432
+          envFrom:
+            - secretRef:
+                name: postgres-credentials
+          env:
+            # Default max_connections is 100. With PgBouncer in front the app fleet
+            # never approaches it, but raise headroom a little for the demo.
+            - name: POSTGRES_INITDB_ARGS
+              value: "--encoding=UTF8"
+          # PGDATA in a subdir keeps the PVC mount root clean (lost+found etc.).
+          volumeMounts:
+            - name: pgdata
+              mountPath: /var/lib/postgresql/data
+              subPath: pgdata
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "invos", "-d", "invoices"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "invos", "-d", "invoices"]
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+  volumeClaimTemplates:
+    - metadata:
+        name: pgdata
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 2Gi

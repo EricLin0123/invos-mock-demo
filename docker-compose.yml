@@ -1,8 +1,14 @@
 # Docker Compose for invos-mock-demo.
-#   Step 1: PostgreSQL.
-#   Step 5: Prometheus + Grafana for monitoring (this file).
-# `docker compose up -d` brings up the whole observability stack. The Fastify ingestion
-# server still runs on the host (port 8473) — Prometheus reaches it via host.docker.internal.
+#
+# ⚠️ DEPRECATED (legacy path). The project now runs on a local Kubernetes (kind) cluster —
+# `bash scripts/run.sh up` and the manifests in k8s/. This compose file (Postgres +
+# Prometheus + Grafana, with the Fastify server run on the host and scraped via
+# host.docker.internal) is kept for ONE release as a fallback only; prefer the K8s path,
+# which is what supports the autoscaling demo. The legacy host-run helpers are
+# scripts/demo.sh and scripts/stop-demo.sh.
+#
+# `docker compose up -d` brings up the observability stack. The Fastify ingestion server
+# still runs on the host (port 8473) — Prometheus reaches it via host.docker.internal.
 
 services:
   postgres:

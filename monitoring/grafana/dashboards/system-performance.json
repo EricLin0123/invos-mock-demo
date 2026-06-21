@@ -4,7 +4,7 @@
   "description": "Ingestion service health from Prometheus: request rate, latency, invoice outcomes, Node process vitals, and k6 offered load overlaid with the server-observed rate (open-model proof).",
   "tags": ["invos", "system", "k6"],
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "editable": true,
   "time": { "from": "now-15m", "to": "now" },
   "refresh": "5s",
@@ -176,6 +176,70 @@
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "expr": "rate(process_cpu_seconds_total[$__rate_interval])",
           "legendFormat": "cpu cores"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Autoscaling — replicas vs offered load vs p99",
+      "type": "timeseries",
+      "description": "The money panel: ingest replica count (from kube-state-metrics) overlaid on k6 offered load and p99 latency on one time axis. Watch the step line grow as offered RPS climbs and shrink ~1 min after traffic stops.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 24 },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 0, "axisPlacement": "auto" } },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "replicas" },
+            "properties": [
+              { "id": "custom.drawStyle", "value": "line" },
+              { "id": "custom.lineInterpolation", "value": "stepAfter" },
+              { "id": "custom.fillOpacity", "value": 25 },
+              { "id": "custom.lineWidth", "value": 2 },
+              { "id": "unit", "value": "short" },
+              { "id": "custom.axisLabel", "value": "replicas" },
+              { "id": "custom.axisPlacement", "value": "left" },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "k6 offered (req/s)" },
+            "properties": [
+              { "id": "unit", "value": "reqps" },
+              { "id": "custom.axisPlacement", "value": "right" },
+              { "id": "custom.lineStyle", "value": { "dash": [10, 10], "fill": "dash" } },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "blue" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "p99 latency" },
+            "properties": [
+              { "id": "unit", "value": "s" },
+              { "id": "custom.axisPlacement", "value": "right" },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }
+            ]
+          }
+        ]
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max", "lastNotNull"] }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "max(kube_deployment_status_replicas{namespace=\"invos\", deployment=\"invos-ingest\"})",
+          "legendFormat": "replicas"
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(k6_http_reqs_total[$__rate_interval]))",
+          "legendFormat": "k6 offered (req/s)"
+        },
+        {
+          "refId": "C",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(invos_ingest_duration_seconds_bucket[$__rate_interval])))",
+          "legendFormat": "p99 latency"
         }
       ]
     }

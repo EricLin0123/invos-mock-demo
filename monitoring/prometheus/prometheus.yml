@@ -1,23 +1,61 @@
-# prometheus.yml — scrape config for the invos-mock-demo stack.
-# Scrapes the Fastify ingestion server's /metrics endpoint every 5s. k6 metrics arrive via
-# the remote-write receiver (enabled by --web.enable-remote-write-receiver in compose), not
-# by scraping, so there is no scrape job for k6.
+# prometheus.yml — in-cluster scrape config for the invos-mock-demo stack on Kubernetes.
+#
+# Prometheus now runs INSIDE the cluster (k8s/prometheus-deployment.yaml) and uses
+# Kubernetes service-discovery to find the autoscaled ingest pods, whose IPs come and go as
+# the HPA scales. (The legacy host-scrape config — a single static host.docker.internal:8473
+# target — is preserved at the bottom for the deprecated docker-compose path.)
+#
+# run.sh loads THIS file verbatim into the `prometheus-config` ConfigMap, so it is the single
+# source of truth for the scrape config. k6 metrics still arrive via remote-write, not scrape.
 
 global:
   scrape_interval: 5s
   evaluation_interval: 5s
 
 scrape_configs:
-  # The Fastify ingestion API (Step 3 metrics: invos_ingest_*, plus default Node metrics).
-  # It runs on the host, so we target host.docker.internal (mapped to host-gateway in compose).
-  - job_name: fastify-ingest
+  # The autoscaled ingest pods (invos_ingest_* + default Node metrics). Pod service-discovery
+  # finds every pod labelled app=invos-ingest in the invos namespace and scrapes :8473/metrics.
+  - job_name: invos-ingest
     metrics_path: /metrics
-    static_configs:
-      - targets: ["host.docker.internal:8473"]
-        labels:
-          service: ingest
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names: ["invos"]
+    relabel_configs:
+      # Only the ingest pods...
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        action: keep
+        regex: invos-ingest
+      # ...and only their :8473 container port (avoids duplicate targets per pod).
+      - source_labels: [__meta_kubernetes_pod_container_port_number]
+        action: keep
+        regex: "8473"
+      # Expose namespace/pod as labels — prometheus-adapter's custom-metric rule keys on them.
+      - source_labels: [__meta_kubernetes_namespace]
+        target_label: namespace
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: pod
+      - target_label: service
+        replacement: ingest
 
-  # Prometheus scraping itself — handy for sanity-checking the monitoring stack is alive.
+  # kube-state-metrics — replica counts + HPA status for the Grafana autoscaling panel.
+  - job_name: kube-state-metrics
+    static_configs:
+      - targets: ["kube-state-metrics:8080"]
+
+  # Prometheus scraping itself — sanity-check the monitoring stack is alive.
   - job_name: prometheus
     static_configs:
       - targets: ["localhost:9090"]
+
+# ---------------------------------------------------------------------------------------
+# LEGACY (docker-compose) scrape config — kept for the deprecated host-run path only.
+# Under compose the Fastify server ran on the host, reached via host.docker.internal:
+#
+#   - job_name: fastify-ingest
+#     metrics_path: /metrics
+#     static_configs:
+#       - targets: ["host.docker.internal:8473"]
+#         labels:
+#           service: ingest
+# ---------------------------------------------------------------------------------------

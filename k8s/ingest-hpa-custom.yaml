@@ -1,0 +1,48 @@
+# OPTIONAL "wow" variant — scale on offered load directly instead of CPU.
+#
+# This HPA targets a per-pod requests-per-second metric (invos_ingest_requests_per_second)
+# served through the custom.metrics.k8s.io API by prometheus-adapter (prometheus-adapter.yaml),
+# derived from invos_ingest_requests_total. It's more on-message for an open-model load test
+# ("scale on the load itself"), but adds the custom-metrics API + more failure surface.
+#
+# Apply EITHER ingest-hpa.yaml (CPU, default) OR this file — never both (two HPAs on one
+# Deployment fight). It is NOT in kustomization.yaml by default; opt in with:
+#   kubectl delete hpa invos-ingest -n invos --ignore-not-found
+#   kubectl apply -f k8s/prometheus-adapter.yaml
+#   kubectl apply -f k8s/ingest-hpa-custom.yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: invos-ingest
+  namespace: invos
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: invos-ingest
+  minReplicas: 1
+  maxReplicas: 8
+  metrics:
+    - type: Pods
+      pods:
+        metric:
+          name: invos_ingest_requests_per_second
+        target:
+          # Aim for ~75 req/s per pod; above that the HPA adds pods.
+          type: AverageValue
+          averageValue: "75"
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Pods
+          value: 4
+          periodSeconds: 15
+      selectPolicy: Max
+    scaleDown:
+      stabilizationWindowSeconds: 30
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 30
+      selectPolicy: Max

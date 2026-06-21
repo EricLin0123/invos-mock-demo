@@ -5,10 +5,16 @@ import pg from 'pg';
 
 const { Pool } = pg;
 
+// Per-pool connection cap. Under K8s autoscaling every pod opens its own pool, so the
+// fleet's total backend connections = replicas × max. Keep this small (e.g. 5) and let
+// PgBouncer fan the pods into a bounded server-side connection set — otherwise N pods ×
+// default max:10 quickly exhausts Postgres' max_connections. See k8s/README.md (§pooling).
+const POOL_MAX = Number(process.env.PG_POOL_MAX) || 10;
+
 // Build a pool config from env. DATABASE_URL takes precedence when set.
 function poolConfig() {
   if (process.env.DATABASE_URL) {
-    return { connectionString: process.env.DATABASE_URL };
+    return { connectionString: process.env.DATABASE_URL, max: POOL_MAX };
   }
   return {
     host: process.env.PGHOST || 'localhost',
@@ -16,6 +22,7 @@ function poolConfig() {
     user: process.env.PGUSER || 'invos',
     password: process.env.PGPASSWORD || 'devonly',
     database: process.env.PGDATABASE || 'invoices',
+    max: POOL_MAX,
   };
 }
 

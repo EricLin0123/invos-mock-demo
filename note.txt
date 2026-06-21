@@ -1,0 +1,2 @@
+introduce variation in invoice ingestion
+introduct commodity frequencies distribution instead of all with the same frequency
